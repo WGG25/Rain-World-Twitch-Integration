@@ -1,0 +1,6 @@
+﻿<!DOCTYPE html>
+<html><head><title>Authenticated!</title><script>
+    let x = new XMLHttpRequest();
+    x.open("POST", location.origin + "/code");
+    x.send(location.hash.substr(1));
+</script></head><body><div style="position:absolute;top:50%;left:50%;text-align:center;transform:translate(-50%,-50%);font-family:'Helvetica Neue',Helvetica,Arial,sans-serif"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAfCAYAAADwbH0HAAABEUlEQVRIx8WWQQ6EIAxF28YzaXShZ9eFZrxUZ4XTIQUpI50mJorEz2v5RQSH6MeZw/15bAgAQOAUr339eu7AOQI9eYq+9vUiJ/hTuAsP0+IvHETPY0PytJK7nWIrNReOaat9nEqbldZEHESlF3NE8buwsapSLVefIsnRygxRjR1qbWQmzqW0ZH7Vrpa1LZmrzTcRax/RxOW83AJjB2DqoO7HmUsoY6IUaSzcSaphWsz1lGJaSpNe78eZ49DGrBGXoKhzaSlG/CycmW/H7zoblfqTma8LES9BOW4JLPVdTdMo6eXZmreoMT3ZGi1Zo9T2f0I8126ppMu0oHb59dGoqcUx+NMfyNO1Vn385Fl8BxLiDdLvSOp8sGWUAAAAAElFTkSuQmCC" style="width: 120px; image-rendering: pixelated;" /><p>Authenticated! You can close this now.</p></div></body></html>
