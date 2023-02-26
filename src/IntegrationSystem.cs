@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using Debug = UnityEngine.Debug;
 using System.Reflection;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api;
@@ -11,6 +10,7 @@ using System.Collections.Concurrent;
 using TwitchLib.PubSub.Events;
 using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomRewardRedemptionStatus;
 using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
+using Debug = UnityEngine.Debug;
 
 namespace TwitchIntegration
 {
@@ -18,18 +18,17 @@ namespace TwitchIntegration
     {
         // Rewards
         public readonly Dictionary<string, Reward> Rewards = new();
-        public readonly LoginToken Login;
 
         // Api
         private readonly TwitchAPI _api;
+        private readonly string _channel;
         private readonly TwitchPubSub _pubSub;
         private readonly ConcurrentQueue<Redemption> _redemptions = new();
 
-        public IntegrationSystem(TwitchAPI api, LoginToken login)
+        public IntegrationSystem(TwitchAPI api, string channel)
         {
-            Login = login;
-
             _api = api;
+            _channel = channel;
             _pubSub = new();
 
             // Scan for integration methods
@@ -44,7 +43,7 @@ namespace TwitchIntegration
             }
 
             _pubSub.OnChannelPointsRewardRedeemed += OnRedemption;
-            _pubSub.ListenToChannelPoints(login.UserID);
+            _pubSub.ListenToChannelPoints(channel);
 
             _pubSub.Connect();
         }
@@ -62,9 +61,8 @@ namespace TwitchIntegration
         private async Task CreateRewardsAsync()
         {
             var tasks = new List<Task<CreateCustomRewardsResponse>>();
-            var data = new CacheData();
-
-            var onlineRewards = await _api.Helix.ChannelPoints.GetCustomRewardAsync(Login.UserID);
+            
+            var onlineRewards = await _api.Helix.ChannelPoints.GetCustomRewardAsync(_channel);
             foreach (var reward in Rewards)
             {
                 if (!onlineRewards.Data.Any(x => x.Title == reward.Key))
@@ -73,34 +71,33 @@ namespace TwitchIntegration
                     {
                         Title = reward.Key
                     };
-                    tasks.Add(_api.Helix.ChannelPoints.CreateCustomRewardsAsync(Login.UserID, req));
+                    tasks.Add(_api.Helix.ChannelPoints.CreateCustomRewardsAsync(_channel, req));
                 }
             }
 
             foreach(var task in tasks)
             {
                 var res = (await task).Data[0];
-                if (!data.OwnedRewards.Contains(res.Id))
-                    data.OwnedRewards.Add(res.Id);
+                if (!CacheData.OwnedRewards.Contains(res.Id))
+                    CacheData.OwnedRewards.Add(res.Id);
             }
 
-            data.Save();
+            CacheData.Save();
         }
 
         private async Task RemoveRewardsAsync()
         {
             var tasks = new List<Task>();
-            var data = new CacheData();
-
-            var onlineRewards = await _api.Helix.ChannelPoints.GetCustomRewardAsync(Login.UserID);
+            
+            var onlineRewards = await _api.Helix.ChannelPoints.GetCustomRewardAsync(_channel);
             foreach (var reward in onlineRewards.Data)
             {
-                if (data.OwnedRewards.Contains(reward.Id))
-                    tasks.Add(_api.Helix.ChannelPoints.DeleteCustomRewardAsync(Login.UserID, reward.Id));
+                if (CacheData.OwnedRewards.Contains(reward.Id))
+                    tasks.Add(_api.Helix.ChannelPoints.DeleteCustomRewardAsync(_channel, reward.Id));
             }
 
-            data.OwnedRewards.Clear();
-            data.Save();
+            CacheData.OwnedRewards.Clear();
+            CacheData.Save();
 
             await Task.WhenAll(tasks);
         }

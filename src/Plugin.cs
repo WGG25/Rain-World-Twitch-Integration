@@ -22,9 +22,9 @@ namespace TwitchIntegration
     internal class Plugin : BaseUnityPlugin
     {
         public static new ManualLogSource Logger { get; private set; }
+        public static new Config Config { get; private set; }
         public IntegrationSystem System;
 
-        private TwitchAPI _api;
         private LoginPrompt _login;
 
         private static readonly string _clientID = "wtm2ouib4loubtj0tu2l6t69erfsgd";
@@ -41,10 +41,6 @@ namespace TwitchIntegration
 
         public void Awake()
         {
-            _api = new TwitchAPI();
-            _api.Settings.ClientId = _clientID;
-            _api.Settings.Scopes = _authScopes;
-
             On.Menu.MainMenu.ctor += MainMenu_ctor;
             On.RainWorld.OnModsInit += (orig, self) =>
             {
@@ -52,7 +48,7 @@ namespace TwitchIntegration
                 {
                     orig(self);
 
-                    MachineConnector.SetRegisteredOI("slime-cubed.twitchintegration", new Config(this));
+                    MachineConnector.SetRegisteredOI("slime-cubed.twitchintegration", Config = new Config(this));
                     AddCommands();
                 }
                 catch (Exception e)
@@ -65,6 +61,8 @@ namespace TwitchIntegration
         private void MainMenu_ctor(On.Menu.MainMenu.orig_ctor orig, MainMenu self, ProcessManager manager, bool showRegionSpecificBkg)
         {
             orig(self, manager, showRegionSpecificBkg);
+
+            CacheData.Reload();
 
             const string enableText = "ENABLE TWITCH";
             const string disableText = "DISABLE TWITCH";
@@ -87,9 +85,7 @@ namespace TwitchIntegration
                 }
                 else
                 {
-                    var data = new CacheData();
-
-                    _login = new LoginPrompt(_api, data.OAuthToken);
+                    _login = new LoginPrompt(_clientID, _authScopes, CacheData.OAuthToken);
                     button.menuLabel.text = disableText;
                 }
             }, 0);
@@ -101,10 +97,14 @@ namespace TwitchIntegration
             {
                 var login = _login;
                 _login = null;
-                System = new IntegrationSystem(_api, login.Validation);
 
-                var data = new CacheData();
-                data.Save();
+                System = new IntegrationSystem(login.Result.Value, login.Result.Key);
+
+                if (Config.StayLoggedIn.Value)
+                {
+                    CacheData.OAuthToken = login.Result.Value.Settings.AccessToken;
+                    CacheData.Save();
+                }
             }
         }
 

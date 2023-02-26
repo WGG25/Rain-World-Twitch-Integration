@@ -5,19 +5,32 @@ using UnityEngine;
 
 namespace TwitchIntegration
 {
-    internal class CacheData
+    internal static class CacheData
     {
-        private readonly Dictionary<string, object> _data;
+        private static Dictionary<string, object> _data;
+        private static string _oAuthToken;
+        private static List<string> _ownedRewards;
+
         private const string KEY_TOKEN = "oauth_token";
         private const string KEY_REWARDS = "owned_rewards";
 
-        public string FilePath => Path.Combine(Application.persistentDataPath, "twitchintegration.json");
+        public static string FilePath => Path.Combine(Application.persistentDataPath, "twitchintegration.json");
 
-        public string OAuthToken { get; set; }
-        public List<string> OwnedRewards { get; } = new();
-
-        public CacheData()
+        public static string OAuthToken
         {
+            get { Load(); return _oAuthToken; }
+            set { Load(); _oAuthToken = value; }
+        }
+
+        public static List<string> OwnedRewards
+        {
+            get { Load(); return _ownedRewards; }
+        }
+
+        private static void Load()
+        {
+            if (_data != null) return;
+
             try
             {
                 _data = File.ReadAllText(FilePath).dictionaryFromJson();
@@ -28,18 +41,27 @@ namespace TwitchIntegration
             }
 
             if (_data.TryGetValue(KEY_TOKEN, out object token) && token is string tokenString)
-                OAuthToken = tokenString;
+                _oAuthToken = tokenString;
 
             if (_data.TryGetValue(KEY_REWARDS, out object rewards) && rewards is List<object> rewardsList)
-                OwnedRewards = rewardsList.Select(x => x as string).Where(x => x != null).ToList();
+                _ownedRewards = rewardsList.Select(x => x as string).Where(x => x != null).ToList();
+            else
+                _ownedRewards = new();
         }
 
-        public void Save()
+        public static void Save()
         {
             _data[KEY_REWARDS] = OwnedRewards;
             _data[KEY_TOKEN] = OAuthToken;
 
             File.WriteAllText(FilePath, _data.toJson());
+        }
+
+        public static void Reload()
+        {
+            _data = null;
+            _oAuthToken = null;
+            _ownedRewards = null;
         }
     }
 }

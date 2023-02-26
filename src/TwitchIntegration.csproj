@@ -17,30 +17,7 @@
 
 	<Target Name="CopyPlugins" AfterTargets="PostBuildEvent">
 		<ItemGroup>
-			<ModPlugin Include="$(TargetPath)"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Bcl.AsyncInterfaces.dll"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Extensions.DependencyInjection.Abstractions.dll"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Extensions.DependencyInjection.dll"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Extensions.Logging.Abstractions.dll"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Extensions.Logging.dll"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Extensions.Options.dll"/>
-			<ModPlugin Include="$(TargetDir)Microsoft.Extensions.Primitives.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchIntegration.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchIntegration.pdb"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.Core.Enums.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.Core.Interfaces.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.Core.Models.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.Core.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.Helix.Models.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.Helix.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Api.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Client.Enums.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Client.Models.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Client.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.Communication.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.EventSub.Core.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.EventSub.Websockets.dll"/>
-			<ModPlugin Include="$(TargetDir)TwitchLib.PubSub.dll"/>
+			<ModPlugin Include="$(TargetDir)/*.dll"/>
 		</ItemGroup>
 		
 		<Copy SourceFiles="@(ModPlugin)" DestinationFolder="../mod/plugins" />

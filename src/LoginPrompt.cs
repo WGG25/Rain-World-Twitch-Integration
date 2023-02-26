@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using TwitchLib.Api.Auth;
 using TwitchLib.Api;
 using UnityEngine;
+using TwitchLib.Api.Core.Enums;
+using System.Linq;
 
 namespace TwitchIntegration
 {
@@ -14,51 +16,48 @@ namespace TwitchIntegration
     {
         private static readonly string _redirectUri = "http://localhost:37506/";
 
-        public bool Done => _loginTask is Task<LoginToken> login && login.IsCompleted;
-        public LoginToken Validation
+        public bool Done => _loginTask is Task<KeyValuePair<string, TwitchAPI>> login && login.IsCompleted;
+        public KeyValuePair<string, TwitchAPI> Result
         {
             get
             {
-                if(_loginTask is Task<LoginToken> login && login.IsCompleted)
+                if(_loginTask is var login && login.IsCompleted)
                 {
                     return login.Result;
                 }
                 else
                 {
-                    return null;
+                    return default;
                 }
             }
         }
 
         public string Token { get; set; }
 
-        private readonly Task<LoginToken> _loginTask;
+        private readonly Task<KeyValuePair<string, TwitchAPI>> _loginTask;
         private readonly CancellationTokenSource _tokenSource;
-        private readonly TwitchAPI _api;
-        private readonly Auth _auth;
         private HttpListener _server;
 
-        public LoginPrompt(TwitchAPI api, string cachedToken = null)
+        public LoginPrompt(string clientID, IEnumerable<AuthScopes> scopes, string cachedToken = null)
         {
-            _api = api;
-            _auth = new Auth(api.Settings, null, null);
-
             _tokenSource = new CancellationTokenSource();
-            _loginTask = Login(_tokenSource.Token, cachedToken);
+            _loginTask = Login(clientID, scopes.ToList(), _tokenSource.Token, cachedToken);
         }
 
 
-        public async Task<LoginToken> Login(CancellationToken ct, string cachedToken = null)
+        public async Task<KeyValuePair<string, TwitchAPI>> Login(string clientID, List<AuthScopes> scopes, CancellationToken ct, string cachedToken = null)
         {
             // Authorize
+            var api = new TwitchAPI();
+            api.Settings.ClientId = clientID;
+            api.Settings.Scopes = scopes;
 
             // Try cached token
-            string accessToken = cachedToken;
             ValidateAccessTokenResponse validation = null;
             if (cachedToken != null)
             {
-                accessToken = cachedToken;
-                validation = await _auth.ValidateAccessTokenAsync(accessToken);
+                api.Settings.AccessToken = cachedToken;
+                validation = await api.Auth.ValidateAccessTokenAsync();
             }
 
             ct.ThrowIfCancellationRequested();
@@ -66,20 +65,21 @@ namespace TwitchIntegration
             // If cached token fails, request a new one
             if (validation == null)
             {
-                accessToken = await GetOAuthToken(ct);
-                validation = await _auth.ValidateAccessTokenAsync(accessToken);
+                api.Settings.AccessToken = await GetOAuthToken(api, ct);
+                validation = await api.Auth.ValidateAccessTokenAsync();
             }
 
             if (validation == null)
                 throw new InvalidOperationException("Failed to validate token!");
 
-            return new LoginToken(accessToken, validation);
+            Plugin.Logger.LogDebug($"Logged in! UserId={validation.UserId}, Login={validation.Login}");
+
+            return new(validation.UserId, api);
         }
 
-        private async Task<string> GetOAuthToken(CancellationToken ct)
+        private async Task<string> GetOAuthToken(TwitchAPI api, CancellationToken ct)
         {
-            var url = _auth.GetAuthorizationCodeUrl(_redirectUri, _api.Settings.Scopes, clientId: _api.Settings.ClientId).Replace("response_type=code", "response_type=token");
-            Plugin.Logger.LogDebug(url);
+            var url = api.Auth.GetAuthorizationCodeUrl(_redirectUri, api.Settings.Scopes, clientId: api.Settings.ClientId).Replace("response_type=code", "response_type=token");
 
             // Set up a server to receive the result
             var server = new HttpListener();
@@ -103,23 +103,16 @@ namespace TwitchIntegration
 
                     // Receive post with code
                     var client = await server.GetContextAsync();
-                    Plugin.Logger.LogDebug($"New request: {client.Request.HttpMethod}, {client.Request.LocalEndPoint}");
                     if (client.Request.HttpMethod == "POST")
                     {
                         string code = new StreamReader(client.Request.InputStream).ReadToEnd();
-                        Plugin.Logger.LogDebug($"Code: {code}");
                         foreach (var entry in code.Split('&'))
                         {
                             string[] args = entry.Split('=');
                             if (args.Length == 2 && args[0] == "access_token")
                             {
-                                Plugin.Logger.LogDebug($"'{args[0]}' = '{args[1]}' (Token)");
                                 accessToken = args[1];
                                 break;
-                            }
-                            else
-                            {
-                                Plugin.Logger.LogDebug(string.Join(", ", args));
                             }
                         }
                     }
