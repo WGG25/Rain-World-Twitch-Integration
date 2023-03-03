@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api;
@@ -8,9 +7,11 @@ using TwitchLib.PubSub;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using TwitchLib.PubSub.Events;
-using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomRewardRedemptionStatus;
-using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
 using Debug = UnityEngine.Debug;
+using TwitchLib.Api.Helix.Models.ChannelPoints;
+using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
+using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomReward;
+using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomRewardRedemptionStatus;
 
 namespace TwitchIntegration
 {
@@ -18,17 +19,21 @@ namespace TwitchIntegration
     {
         // Rewards
         public readonly Dictionary<string, Reward> Rewards = new();
+        public bool? ChannelPointsAvailable { get; private set; }
+        private readonly Dictionary<string, CustomReward> _onlineRewardsByTitle = new();
+        private readonly HashSet<string> _manageableRewardIds = new();
+        private bool _rewardsPaused = true;
 
         // Api
-        private readonly TwitchAPI _api;
-        private readonly string _channel;
+        public readonly TwitchAPI Api;
+        public readonly string ChannelId;
         private readonly TwitchPubSub _pubSub;
-        private readonly ConcurrentQueue<Redemption> _redemptions = new();
+        private readonly ConcurrentQueue<PendingRedemption> _redemptionQueue = new();
 
         public IntegrationSystem(TwitchAPI api, string channel)
         {
-            _api = api;
-            _channel = channel;
+            Api = api;
+            ChannelId = channel;
             _pubSub = new();
 
             // Scan for integration methods
@@ -44,70 +49,250 @@ namespace TwitchIntegration
 
             _pubSub.OnChannelPointsRewardRedeemed += OnRedemption;
             _pubSub.ListenToChannelPoints(channel);
-
             _pubSub.Connect();
-        }
 
-        public void CreateRewards()
-        {
-            _ = CreateRewardsAsync();
-        }
-
-        public void RemoveRewards()
-        {
-            _ = RemoveRewardsAsync();
-        }
-
-        private async Task CreateRewardsAsync()
-        {
-            var tasks = new List<Task<CreateCustomRewardsResponse>>();
-            
-            var onlineRewards = await _api.Helix.ChannelPoints.GetCustomRewardAsync(_channel);
-            foreach (var reward in Rewards)
+            // Request existing rewards
+            api.Helix.ChannelPoints.GetCustomRewardAsync(channel).ContinueWith(task =>
             {
-                if (!onlineRewards.Data.Any(x => x.Title == reward.Key))
+                if (ValidateSuccess(task))
                 {
-                    CreateCustomRewardsRequest req = new()
+                    foreach (var reward in task.Result.Data)
+                        UpdateOnlineInfo(reward);
+
+                    ChannelPointsAvailable = true;
+                }
+                else
+                {
+                    ChannelPointsAvailable = false;
+                }
+            });
+
+            // Request owned rewards
+            api.Helix.ChannelPoints.GetCustomRewardAsync(channel, onlyManageableRewards: true).ContinueWith(task =>
+            {
+                if (ValidateSuccess(task))
+                {
+                    foreach (var reward in task.Result.Data)
+                        UpdateOnlineInfo(reward, true);
+                }
+            });
+        }
+
+        public void Update()
+        {
+            bool paused = RWCustom.Custom.rainWorld.processManager.currentMainLoop is not RainWorldGame game || game.pauseMenu?.counter > 40f * Integrations.minPauseTime;
+
+            if(paused != _rewardsPaused)
+            {
+                _rewardsPaused = paused;
+
+                foreach(var reward in Rewards)
+                {
+                    var info = GetCachedOnlineInfo(reward.Key);
+                    if(info.IsPaused != paused)
                     {
-                        Title = reward.Key
-                    };
-                    tasks.Add(_api.Helix.ChannelPoints.CreateCustomRewardsAsync(_channel, req));
+                        
+                    }
                 }
             }
 
-            foreach(var task in tasks)
+            while(_redemptionQueue.TryDequeue(out var redemption))
             {
-                var res = (await task).Data[0];
-                if (!CacheData.OwnedRewards.Contains(res.Id))
-                    CacheData.OwnedRewards.Add(res.Id);
+                if(paused)
+                    redemption.MarkCancelled();
+                else
+                    Redeem(redemption);
             }
-
-            CacheData.Save();
         }
 
-        private async Task RemoveRewardsAsync()
+        private bool ValidateSuccess(Task task)
         {
-            var tasks = new List<Task>();
-            
-            var onlineRewards = await _api.Helix.ChannelPoints.GetCustomRewardAsync(_channel);
-            foreach (var reward in onlineRewards.Data)
+            if(task.Exception is Exception e)
             {
-                if (CacheData.OwnedRewards.Contains(reward.Id))
-                    tasks.Add(_api.Helix.ChannelPoints.DeleteCustomRewardAsync(_channel, reward.Id));
+                if (e is AggregateException ae)
+                    foreach (var inner in ae.InnerExceptions)
+                        Plugin.Logger.LogError(inner);
+                else
+                    Plugin.Logger.LogError(e);
             }
 
-            CacheData.OwnedRewards.Clear();
-            CacheData.Save();
-
-            await Task.WhenAll(tasks);
+            return !task.IsFaulted;
         }
 
         private void OnRedemption(object sender, OnChannelPointsRewardRedeemedArgs e)
         {
-            _redemptions.Enqueue(new Redemption(this, e));
+            _redemptionQueue.Enqueue(new PendingRedemption(this, e));
         }
 
-        public void Redeem(Redemption redemption)
+        public CustomReward GetCachedOnlineInfo(string rewardTitle)
+        {
+            lock (_onlineRewardsByTitle)
+            {
+                if (_onlineRewardsByTitle.TryGetValue(rewardTitle, out var reward))
+                    return reward;
+                else
+                    return null;
+            }
+        }
+
+        public void PauseReward(string rewardTitle, bool paused)
+        {
+            CustomReward reward;
+            lock (_onlineRewardsByTitle)
+            {
+                if (!_onlineRewardsByTitle.TryGetValue(rewardTitle, out reward))
+                    reward = null;
+            }
+            
+            if(reward != null)
+            {
+                if(reward.IsPaused != paused)
+                {
+                    Plugin.Logger.LogDebug($"{(reward.IsPaused ? "Pausing" : "Unpausing")} reward: {rewardTitle}");
+                    UpdateCustomRewardRequest req = new()
+                    {
+                        IsPaused = paused
+                    };
+
+                    Api.Helix.ChannelPoints.UpdateCustomRewardAsync(ChannelId, reward.Id, req)
+                        .ContinueWith(task =>
+                        {
+                            if (ValidateSuccess(task))
+                            {
+                                foreach (var updatedReward in task.Result.Data)
+                                {
+                                    UpdateOnlineInfo(updatedReward, true);
+                                }
+                                CacheData.Save();
+                            }
+                        });
+                }
+            }
+        }
+
+        public void PatchOnlineInfo(string rewardTitle, int? cost, int? delay, bool? enabled)
+        {
+            CustomReward reward;
+            lock (_onlineRewardsByTitle)
+            {
+                if (!_onlineRewardsByTitle.TryGetValue(rewardTitle, out reward))
+                    reward = null;
+            }
+
+            if (reward != null)
+            {
+                // Only update an existing reward if the settings are different
+                if (cost.HasValue && reward.Cost != cost.Value
+                    || delay.HasValue && (reward.GlobalCooldownSetting.IsEnabled ? reward.GlobalCooldownSetting.GlobalCooldownSeconds : 0) != delay.Value
+                    || enabled.HasValue && reward.IsEnabled != enabled.Value)
+                {
+                    UpdateCustomRewardRequest req = new()
+                    {
+                        Cost = cost,
+                        IsGlobalCooldownEnabled = delay.HasValue ? delay.Value > 0 : null,
+                        GlobalCooldownSeconds = delay.HasValue && delay > 0 ? delay : null,
+                        IsEnabled = enabled
+                    };
+                    Plugin.Logger.LogDebug($"Updating reward: {rewardTitle}, cost={cost}, delay={delay}, enabled={enabled}");
+                    Api.Helix.ChannelPoints.UpdateCustomRewardAsync(ChannelId, reward.Id, req)
+                        .ContinueWith(task =>
+                        {
+                            if (ValidateSuccess(task))
+                            {
+                                foreach (var updatedReward in task.Result.Data)
+                                    UpdateOnlineInfo(updatedReward);
+                            }
+                        });
+                }
+            }
+            else
+            {
+                // Create a new reward
+                CreateCustomRewardsRequest req = new()
+                {
+                    Title = rewardTitle,
+                    Cost = cost.Value,
+                    IsGlobalCooldownEnabled = delay > 0,
+                    GlobalCooldownSeconds = delay > 0 ? delay : null,
+                    IsEnabled = enabled.Value
+                };
+                Plugin.Logger.LogDebug($"Creating reward: {rewardTitle}, cost={cost}, delay={delay}, enabled={enabled}");
+                Api.Helix.ChannelPoints.CreateCustomRewardsAsync(ChannelId, req)
+                    .ContinueWith(task =>
+                    {
+                        if (ValidateSuccess(task))
+                        {
+                            foreach (var newReward in task.Result.Data)
+                            {
+                                UpdateOnlineInfo(newReward, true);
+                            }
+                            CacheData.Save();
+                        }
+                    });
+            }
+        }
+
+        public void DeleteOnlineInfo(string rewardTitle)
+        {
+            CustomReward reward;
+            lock (_onlineRewardsByTitle)
+            {
+                if (_onlineRewardsByTitle.TryGetValue(rewardTitle, out reward))
+                {
+                    lock (_manageableRewardIds)
+                    {
+                        _manageableRewardIds.Remove(reward.Id);
+                    }
+                }
+                else
+                {
+                    reward = null;
+                }
+
+                _onlineRewardsByTitle.Remove(rewardTitle);
+            }
+
+            if (reward != null)
+            {
+                Plugin.Logger.LogDebug($"Deleting reward: {rewardTitle}");
+                Api.Helix.ChannelPoints.DeleteCustomRewardAsync(ChannelId, reward.Id)
+                    .LogFailure();
+            }
+            else
+            {
+                Plugin.Logger.LogDebug($"Skipped deleting non-existent reward: {rewardTitle}");
+            }
+
+            Plugin.Config?.RewardsChanged();
+        }
+
+        private void UpdateOnlineInfo(CustomReward reward, bool markManageable = false)
+        {
+            lock(_onlineRewardsByTitle)
+            {
+                _onlineRewardsByTitle[reward.Title] = reward;
+            }
+
+            if(markManageable)
+            {
+                lock(_manageableRewardIds)
+                {
+                    _manageableRewardIds.Add(reward.Id);
+                }
+            }
+
+            Plugin.Config?.RewardsChanged();
+        }
+
+        public bool CanManageReward(string rewardId)
+        {
+            lock(_manageableRewardIds)
+            {
+                return _manageableRewardIds.Contains(rewardId);
+            }
+        }
+
+        public void Redeem(PendingRedemption redemption)
         {
             var res = Fulfillment.None;
 
@@ -120,8 +305,16 @@ namespace TwitchIntegration
                         case RewardStatus.TryLater:
                             if (Integrations.retryFailedRewards)
                             {
-                                Timer.Set(() => Redeem(redemption), UnityEngine.Random.Range(2f, 5f));
-                                res = Fulfillment.None;
+                                redemption.Retries++;
+                                if(redemption.Retries > Integrations.maxRetries)
+                                {
+                                    res = Fulfillment.Refund;
+                                }
+                                else
+                                {
+                                    Timer.Set(() => Redeem(redemption), UnityEngine.Random.Range(2f, 5f));
+                                    res = Fulfillment.None;
+                                }
                             }
                             else
                             {
@@ -150,7 +343,7 @@ namespace TwitchIntegration
             switch(res)
             {
                 case Fulfillment.Fulfull: redemption.MarkFulfilled(); break;
-                case Fulfillment.Refund: redemption.MarkFulfilled(); break;
+                case Fulfillment.Refund: redemption.MarkCancelled(); break;
             }
         }
 
@@ -191,28 +384,23 @@ namespace TwitchIntegration
             }
         }
 
-        public class Redemption
+        public class PendingRedemption
         {
             public readonly string RewardTitle;
             public readonly string UserName;
-            private readonly string _redemptionID;
-            private readonly string _rewardID;
-            private readonly string _channelID;
-            private readonly string _status;
+            public int Retries;
+            private readonly OnChannelPointsRewardRedeemedArgs _source;
             private readonly IntegrationSystem _system;
 
-            public Redemption(IntegrationSystem system, OnChannelPointsRewardRedeemedArgs args)
+            public PendingRedemption(IntegrationSystem system, OnChannelPointsRewardRedeemedArgs args)
             {
                 UserName = args.RewardRedeemed.Redemption.User.DisplayName;
                 RewardTitle = args.RewardRedeemed.Redemption.Reward.Title;
-                _status = args.RewardRedeemed.Redemption.Status;
                 _system = system;
-                _redemptionID = args.RewardRedeemed.Redemption.Id;
-                _rewardID = args.RewardRedeemed.Redemption.Reward.Id;
-                _channelID = args.ChannelId;
+                _source = args;
             }
 
-            public Redemption(string title, string user)
+            public PendingRedemption(string title, string user)
             {
                 RewardTitle = title;
                 UserName = user;
@@ -223,41 +411,17 @@ namespace TwitchIntegration
 
             private void MarkStatus(CustomRewardRedemptionStatus status)
             {
-                if (_redemptionID == null || _status != "UNFULFILLED") return;
+                var redemption = _source?.RewardRedeemed.Redemption;
+                if (redemption == null
+                    || redemption.Status != "UNFULFILLED"
+                    || redemption.Reward.ShouldRedemptionsSkipRequestQueue
+                    || !_system.CanManageReward(redemption.Reward.Id)) return;
 
                 var request = new UpdateCustomRewardRedemptionStatusRequest() { Status = status };
-                _system._api.Helix.ChannelPoints.UpdateRedemptionStatusAsync(_channelID, _rewardID, new List<string>() { _redemptionID }, request);
+                _system.Api.Helix.ChannelPoints.UpdateRedemptionStatusAsync(redemption.ChannelId, redemption.Reward.Id, new List<string>() { redemption.Id }, request)
+                    .LogFailure();
             }
         }
-
-        #region Helper Methods
-        static bool ParseCommand(string line, out string command, out string[] args)
-        {
-            var space = line.IndexOf(' ');
-            if (space != -1)
-            {
-                command = line.Substring(0, space);
-                args = Unescape(line.Substring(space + 1));
-                return true;
-            }
-            else
-            {
-                command = null;
-                args = null;
-                return false;
-            }
-        }
-
-        static string Escape(params string[] args)
-        {
-            return string.Join(",", args.Select(Uri.EscapeDataString).ToArray());
-        }
-
-        static string[] Unescape(string args)
-        {
-            return args.Split(',').Select(Uri.UnescapeDataString).ToArray();
-        }
-        #endregion Helper Methods
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
@@ -265,6 +429,8 @@ namespace TwitchIntegration
     {
         public string RewardTitle { get; private set; }
         public string DisplayName { get; set; }
+        public int DefaultCost { get; set; } = 1;
+        public int DefaultDelay { get; set; } = 0;
 
         public TwitchRewardAttribute(string rewardTitle)
         {

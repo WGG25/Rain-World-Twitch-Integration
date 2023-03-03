@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using UnityEngine;
 
 namespace TwitchIntegration
@@ -9,22 +8,16 @@ namespace TwitchIntegration
     {
         private static Dictionary<string, object> _data;
         private static string _oAuthToken;
-        private static List<string> _ownedRewards;
+        private static readonly object _lock = new();
 
         private const string KEY_TOKEN = "oauth_token";
-        private const string KEY_REWARDS = "owned_rewards";
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, "twitchintegration.json");
 
         public static string OAuthToken
         {
-            get { Load(); return _oAuthToken; }
-            set { Load(); _oAuthToken = value; }
-        }
-
-        public static List<string> OwnedRewards
-        {
-            get { Load(); return _ownedRewards; }
+            get { lock (_lock) { Load(); return _oAuthToken; } }
+            set { lock (_lock) { Load(); _oAuthToken = value; } }
         }
 
         private static void Load()
@@ -42,26 +35,25 @@ namespace TwitchIntegration
 
             if (_data.TryGetValue(KEY_TOKEN, out object token) && token is string tokenString)
                 _oAuthToken = tokenString;
-
-            if (_data.TryGetValue(KEY_REWARDS, out object rewards) && rewards is List<object> rewardsList)
-                _ownedRewards = rewardsList.Select(x => x as string).Where(x => x != null).ToList();
-            else
-                _ownedRewards = new();
         }
 
         public static void Save()
         {
-            _data[KEY_REWARDS] = OwnedRewards;
-            _data[KEY_TOKEN] = OAuthToken;
+            lock (_lock)
+            {
+                _data[KEY_TOKEN] = OAuthToken;
 
-            File.WriteAllText(FilePath, _data.toJson());
+                File.WriteAllText(FilePath, _data.toJson());
+            }
         }
 
         public static void Reload()
         {
-            _data = null;
-            _oAuthToken = null;
-            _ownedRewards = null;
+            lock (_lock)
+            {
+                _data = null;
+                _oAuthToken = null;
+            }
         }
     }
 }

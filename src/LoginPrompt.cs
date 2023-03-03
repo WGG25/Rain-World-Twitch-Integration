@@ -9,6 +9,11 @@ using TwitchLib.Api;
 using UnityEngine;
 using TwitchLib.Api.Core.Enums;
 using System.Linq;
+using TwitchLib.Api.Core.Interfaces;
+using System.ComponentModel.DataAnnotations;
+using System.Net.Http;
+using Newtonsoft.Json;
+using TwitchLib.Api.Core.Common;
 
 namespace TwitchIntegration
 {
@@ -21,7 +26,7 @@ namespace TwitchIntegration
         {
             get
             {
-                if(_loginTask is var login && login.IsCompleted)
+                if(_loginTask is Task<KeyValuePair<string, TwitchAPI>> login && login.IsCompleted)
                 {
                     return login.Result;
                 }
@@ -44,37 +49,69 @@ namespace TwitchIntegration
             _loginTask = Login(clientID, scopes.ToList(), _tokenSource.Token, cachedToken);
         }
 
-
         public async Task<KeyValuePair<string, TwitchAPI>> Login(string clientID, List<AuthScopes> scopes, CancellationToken ct, string cachedToken = null)
         {
             // Authorize
-            var api = new TwitchAPI();
-            api.Settings.ClientId = clientID;
-            api.Settings.Scopes = scopes;
+            TwitchAPI api;
 
-            // Try cached token
-            ValidateAccessTokenResponse validation = null;
-            if (cachedToken != null)
+            if (Plugin.MockApi == null)
             {
-                api.Settings.AccessToken = cachedToken;
-                validation = await api.Auth.ValidateAccessTokenAsync();
+                ValidateAccessTokenResponse validation = null;
+
+                // Use real data
+                api = new TwitchAPI();
+                api.Settings.ClientId = clientID;
+                api.Settings.Scopes = scopes;
+
+                // Try cached token
+                if (cachedToken != null)
+                {
+                    api.Settings.AccessToken = cachedToken;
+                    validation = await api.Auth.ValidateAccessTokenAsync();
+                }
+
+                ct.ThrowIfCancellationRequested();
+
+                // If cached token fails, request a new one
+                if (validation == null)
+                {
+                    api.Settings.AccessToken = await GetOAuthToken(api, ct);
+                    validation = await api.Auth.ValidateAccessTokenAsync();
+                }
+
+                if (validation == null)
+                    throw new InvalidOperationException("Failed to validate token!");
+
+                Plugin.Logger.LogDebug($"Logged in! UserId={validation.UserId}, Login={validation.Login}");
+
+                return new(validation.UserId, api);
             }
-
-            ct.ThrowIfCancellationRequested();
-
-            // If cached token fails, request a new one
-            if (validation == null)
+            else
             {
-                api.Settings.AccessToken = await GetOAuthToken(api, ct);
-                validation = await api.Auth.ValidateAccessTokenAsync();
+                // Use mock API
+                api = new TwitchAPI(http: Plugin.MockApi.HttpCallHandler);
+                api.Settings.ClientId = Plugin.MockApi.ClientID;
+                api.Settings.Scopes = scopes;
+
+                var client = new HttpClient();
+
+                var uri = new UriBuilder("http", "localhost", 8080, "auth/authorize");
+                uri.Query = "client_id=" + Plugin.MockApi.ClientID
+                    + "&client_secret=" + Plugin.MockApi.ClientSecret
+                    + "&grant_type=user_token"
+                    + "&grant_type=user_token"
+                    + "&user_id=" + Plugin.MockApi.UserID
+                    + "&scope=" + string.Join("%20", scopes.Select(Helpers.AuthScopesToString));
+
+                var res = await client.PostAsync(uri.Uri, new StringContent(""));
+                api.Settings.AccessToken = (string)(await res.Content.ReadAsStringAsync()).dictionaryFromJson()["access_token"];
+
+                var user = await api.Helix.Users.GetUsersAsync();
+
+                Plugin.Logger.LogDebug(JsonConvert.SerializeObject(user));
+
+                return new(user.Users[0].Id, api);
             }
-
-            if (validation == null)
-                throw new InvalidOperationException("Failed to validate token!");
-
-            Plugin.Logger.LogDebug($"Logged in! UserId={validation.UserId}, Login={validation.Login}");
-
-            return new(validation.UserId, api);
         }
 
         private async Task<string> GetOAuthToken(TwitchAPI api, CancellationToken ct)

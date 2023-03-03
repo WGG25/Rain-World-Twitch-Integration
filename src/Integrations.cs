@@ -25,7 +25,8 @@ namespace TwitchIntegration
     {
         // SETTINGS //
         public static bool retryFailedRewards = true;
-        
+        public static int maxRetries = 4;
+        public static float minPauseTime = 10f;
         
         private static RainWorld rw;
 

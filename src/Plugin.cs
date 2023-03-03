@@ -2,7 +2,6 @@
 using BepInEx;
 using Menu;
 using System.Collections.Generic;
-using TwitchLib.Api;
 using UnityEngine;
 using TwitchLib.Api.Core.Enums;
 using DevConsole;
@@ -23,6 +22,7 @@ namespace TwitchIntegration
     {
         public static new ManualLogSource Logger { get; private set; }
         public static new Config Config { get; private set; }
+        public static readonly MockData MockApi = null;
         public IntegrationSystem System;
 
         private LoginPrompt _login;
@@ -106,6 +106,8 @@ namespace TwitchIntegration
                     CacheData.Save();
                 }
             }
+
+            System?.Update();
         }
 
         private void AddCommands()
@@ -137,7 +139,7 @@ namespace TwitchIntegration
                                 break;
                             }
                             GameConsole.WriteLine($"Redeeming \"{rewardName}\"...");
-                            System?.Redeem(new IntegrationSystem.Redemption(rewardName, "Test User"));
+                            System?.Redeem(new IntegrationSystem.PendingRedemption(rewardName, "Test User"));
                             break;
 
                         case "skip_timers":
@@ -149,7 +151,7 @@ namespace TwitchIntegration
                             if (rewards == null) break;
                             for (int i = 0; i < 5; i++)
                             {
-                                System?.Redeem(new IntegrationSystem.Redemption(rewards[Random.Range(0, rewards.Length)], "Test User"));
+                                System?.Redeem(new IntegrationSystem.PendingRedemption(rewards[Random.Range(0, rewards.Length)], "Test User"));
                             }
                             break;
 
