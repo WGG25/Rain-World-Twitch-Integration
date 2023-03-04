@@ -88,7 +88,7 @@ namespace TwitchIntegration
                     _login = new LoginPrompt(_clientID, _authScopes, CacheData.OAuthToken);
                     button.menuLabel.text = disableText;
                 }
-            }, 0);
+            }, 1);
         }
 
         public void Update()

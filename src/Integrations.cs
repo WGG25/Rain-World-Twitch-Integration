@@ -23,14 +23,7 @@ namespace TwitchIntegration
 {
     public static class Integrations
     {
-        // SETTINGS //
-        public static bool retryFailedRewards = true;
-        public static int maxRetries = 4;
-        public static float minPauseTime = 10f;
-        
-        private static RainWorld rw;
-
-        public static RainWorld RW => rw ?? (rw = UnityEngine.Object.FindObjectOfType<RainWorld>());
+        public static RainWorld RW => Custom.rainWorld;
         public static RainWorldGame Game => RW.processManager.currentMainLoop as RainWorldGame;
         public static IEnumerable<Player> Players => Game.Players.Where(ply => ply.realizedObject is Player).Select(ply => (Player)ply.realizedObject);
         public static bool InGame => Game != null;

@@ -80,7 +80,7 @@ namespace TwitchIntegration
 
         public void Update()
         {
-            bool paused = RWCustom.Custom.rainWorld.processManager.currentMainLoop is not RainWorldGame game || game.pauseMenu?.counter > 40f * Integrations.minPauseTime;
+            bool paused = RWCustom.Custom.rainWorld.processManager.currentMainLoop is not RainWorldGame game || game.pauseMenu?.counter > 40f * Plugin.Config.AfkTime.Value;
 
             if(paused != _rewardsPaused)
             {
@@ -303,22 +303,15 @@ namespace TwitchIntegration
                     switch(reward.Handler())
                     {
                         case RewardStatus.TryLater:
-                            if (Integrations.retryFailedRewards)
+                            if(redemption.Retries >= Plugin.Config.MaxRetries.Value)
                             {
-                                redemption.Retries++;
-                                if(redemption.Retries > Integrations.maxRetries)
-                                {
-                                    res = Fulfillment.Refund;
-                                }
-                                else
-                                {
-                                    Timer.Set(() => Redeem(redemption), UnityEngine.Random.Range(2f, 5f));
-                                    res = Fulfillment.None;
-                                }
+                                res = Fulfillment.Refund;
                             }
                             else
                             {
-                                res = Fulfillment.Refund;
+                                redemption.Retries++;
+                                Timer.Set(() => Redeem(redemption), UnityEngine.Random.Range(2f, 5f));
+                                res = Fulfillment.None;
                             }
                             break;
 

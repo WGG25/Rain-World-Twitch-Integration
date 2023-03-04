@@ -15,6 +15,8 @@ namespace TwitchIntegration
     internal class Config : OptionInterface
     {
         public readonly Configurable<bool> StayLoggedIn;
+        public readonly Configurable<int> MaxRetries;
+        public readonly Configurable<float> AfkTime;
         private readonly Plugin _plugin;
 
         // Tab 0: Control panel
@@ -35,6 +37,8 @@ namespace TwitchIntegration
             _plugin = plugin;
 
             StayLoggedIn = config.Bind("stay_logged_in", false);
+            MaxRetries = config.Bind("max_retries", 5);
+            AfkTime = config.Bind("afk_time", 10f);
 
             OnConfigChanged += Config_OnConfigChanged;
         }
@@ -75,7 +79,7 @@ namespace TwitchIntegration
             );
             float y = 600f - titleHeight - itemHeight - spacing * 2f;
 
-            // Token control
+            // Store token on login
             Tabs[0].AddItems(
                 new OpCheckBox(StayLoggedIn, columnX, y)
                 { description = "Store login information so that visiting the authentication page is not required." },
@@ -83,10 +87,19 @@ namespace TwitchIntegration
             );
             y -= itemHeight + spacing;
 
+            // Remove stored token immediately
             Tabs[0].AddItems(
                 _logOut = new OpSimpleButton(new Vector2(columnX, y), new Vector2(columnWidth, 24f), "Log Out")
                 { description = "Remove all stored login information." }
             );
+
+            // 
+            Tabs[0].AddItems(
+                new OpUpdown(AfkTime, new Vector2(columnX, y), 100f, 1)
+                { description = "Pause redemptions after this many seconds on the pause menu." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Stay Logged In")
+            );
+            y -= itemHeight + spacing;
 
             _logOut.OnClick += btn =>
             {
