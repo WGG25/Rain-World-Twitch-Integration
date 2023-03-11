@@ -139,7 +139,7 @@ namespace TwitchIntegration
                                 break;
                             }
                             GameConsole.WriteLine($"Redeeming \"{rewardName}\"...");
-                            System?.Redeem(new IntegrationSystem.PendingRedemption(rewardName, "Test User"));
+                            System?.Redeem(new IntegrationSystem.PendingRedemption(System.Rewards[rewardName], "Test User"));
                             break;
 
                         case "skip_timers":
@@ -147,7 +147,7 @@ namespace TwitchIntegration
                             break;
 
                         case "stress_test":
-                            var rewards = System?.Rewards.Keys.ToArray();
+                            var rewards = System?.Rewards.Values.Where(x => x.Enabled).ToArray();
                             if (rewards == null) break;
                             for (int i = 0; i < 5; i++)
                             {

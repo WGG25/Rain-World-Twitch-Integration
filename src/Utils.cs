@@ -6,17 +6,21 @@ namespace TwitchIntegration
     {
         public static Task LogFailure(this Task task)
         {
-            return task.ContinueWith(doneTask =>
+            return task.ContinueWith(ValidateSuccess);
+        }
+
+        public static bool ValidateSuccess(Task task)
+        {
+            if (task.Exception != null)
             {
-                if(doneTask.IsFaulted)
+                foreach (var inner in task.Exception.InnerExceptions)
                 {
-                    Plugin.Logger.LogError("Task failed!");
-                    foreach (var e in doneTask.Exception.InnerExceptions)
-                    {
-                        UnityEngine.Debug.LogException(e);
-                    }
+                    Plugin.Logger.LogError(inner);
+                    UnityEngine.Debug.LogException(inner);
                 }
-            });
+            }
+
+            return !task.IsFaulted;
         }
     }
 }

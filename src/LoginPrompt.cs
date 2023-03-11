@@ -108,8 +108,6 @@ namespace TwitchIntegration
 
                 var user = await api.Helix.Users.GetUsersAsync();
 
-                Plugin.Logger.LogDebug(JsonConvert.SerializeObject(user));
-
                 return new(user.Users[0].Id, api);
             }
         }

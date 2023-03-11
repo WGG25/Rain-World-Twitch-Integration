@@ -17,14 +17,7 @@ namespace TwitchIntegration
             if (initialized) return;
             initialized = true;
 
-            {
-                Stream str = Assembly.GetExecutingAssembly().GetManifestResourceStream("TwitchIntegration.emoji.png");
-                byte[] image = new byte[str.Length];
-                str.Read(image, 0, image.Length);
-                Texture2D tex = new Texture2D(1, 1);
-                tex.LoadImage(image);
-                Futile.atlasManager.LoadImage("atlases/emoji.png");
-            }
+            Futile.atlasManager.LoadImage("atlases/ti_emoji");
 
             On.Rock.InitiateSprites += (orig, rock, sLeaser, rCam) =>
             {
@@ -32,7 +25,7 @@ namespace TwitchIntegration
 
                 if(rocks.Contains(rock.abstractPhysicalObject.ID))
                 {
-                    sLeaser.sprites[0].SetElementByName("atlases/emoji.png");
+                    sLeaser.sprites[0].SetElementByName("atlases/ti_emoji");
                 }
             };
 

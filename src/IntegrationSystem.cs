@@ -1,28 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Reflection;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api;
 using TwitchLib.PubSub;
-using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using TwitchLib.PubSub.Events;
-using Debug = UnityEngine.Debug;
-using TwitchLib.Api.Helix.Models.ChannelPoints;
-using TwitchLib.Api.Helix.Models.ChannelPoints.CreateCustomReward;
-using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomReward;
 using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomRewardRedemptionStatus;
+using TwitchLib.PubSub.Models.Responses.Messages.Redemption;
+using RWCustom;
+using Microsoft.Extensions.Logging;
+using Debug = UnityEngine.Debug;
+using BepLogLevel = BepInEx.Logging.LogLevel;
 
 namespace TwitchIntegration
 {
-    internal class IntegrationSystem : IDisposable
+    internal class IntegrationSystem : IDisposable, ILogger<TwitchPubSub>
     {
         // Rewards
-        public readonly Dictionary<string, Reward> Rewards = new();
         public bool? ChannelPointsAvailable { get; private set; }
-        private readonly Dictionary<string, CustomReward> _onlineRewardsByTitle = new();
-        private readonly HashSet<string> _manageableRewardIds = new();
-        private bool _rewardsPaused = true;
+        public Dictionary<string, RewardInfo> Rewards = new();
 
         // Api
         public readonly TwitchAPI Api;
@@ -34,30 +30,40 @@ namespace TwitchIntegration
         {
             Api = api;
             ChannelId = channel;
-            _pubSub = new();
 
             // Scan for integration methods
-            foreach (var m in typeof(Integrations).GetMethods())
+            foreach (var pair in Integrations.Attributes)
             {
-                var attribs = m.GetCustomAttributes(typeof(TwitchRewardAttribute), false);
-                if (attribs == null || attribs.Length == 0) continue;
-
-                var attrib = (TwitchRewardAttribute)attribs[0];
-
-                Rewards[attrib.RewardTitle] = new Reward(attrib, m);
+                Rewards[pair.Item2.RewardTitle] = new RewardInfo(pair.Item2, pair.Item1, this);
             }
 
-            _pubSub.OnChannelPointsRewardRedeemed += OnRedemption;
-            _pubSub.ListenToChannelPoints(channel);
-            _pubSub.Connect();
+            if (Plugin.MockApi == null)
+            {
+                Plugin.Logger.LogInfo("Connecting PubSub...");
+                _pubSub = new(this);
+                _pubSub.OnListenResponse += OnListenResponse;
+                _pubSub.OnPubSubServiceConnected += SendTopics;
+                _pubSub.OnChannelPointsRewardRedeemed += OnRedemption;
+                _pubSub.ListenToChannelPoints(channel);
+                _pubSub.Connect();
+            }
+            else
+            {
+                Plugin.Logger.LogInfo("Using mock API! PubSub skipped.");
+            }
 
             // Request existing rewards
             api.Helix.ChannelPoints.GetCustomRewardAsync(channel).ContinueWith(task =>
             {
-                if (ValidateSuccess(task))
+                if (Utils.ValidateSuccess(task))
                 {
                     foreach (var reward in task.Result.Data)
-                        UpdateOnlineInfo(reward);
+                    {
+                        if(Rewards.TryGetValue(reward.Title, out var info))
+                        {
+                            info.UpdateOnlineInfo(reward);
+                        }
+                    }
 
                     ChannelPointsAvailable = true;
                 }
@@ -70,273 +76,99 @@ namespace TwitchIntegration
             // Request owned rewards
             api.Helix.ChannelPoints.GetCustomRewardAsync(channel, onlyManageableRewards: true).ContinueWith(task =>
             {
-                if (ValidateSuccess(task))
+                if (Utils.ValidateSuccess(task))
                 {
                     foreach (var reward in task.Result.Data)
-                        UpdateOnlineInfo(reward, true);
+                    {
+                        if (Rewards.TryGetValue(reward.Title, out var info))
+                        {
+                            info.UpdateOnlineInfo(reward);
+                            info.Manageable = true;
+                        }
+                    }
                 }
             });
         }
 
+        private void SendTopics(object sender, EventArgs e)
+        {
+            ((TwitchPubSub)sender).SendTopics(Api.Settings.AccessToken);
+        }
+
+        private void OnListenResponse(object sender, OnListenResponseArgs e)
+        {
+            if(e.Successful)
+            {
+                Plugin.Logger.LogInfo("Connected to PubSub!");
+            }
+            else
+            {
+                Plugin.Logger.LogError($"Failed to connect to PubSub!\nTopic: {e.Topic}\nError: {e.Response.Error}");
+            }
+        }
+
         public void Update()
         {
-            bool paused = RWCustom.Custom.rainWorld.processManager.currentMainLoop is not RainWorldGame game || game.pauseMenu?.counter > 40f * Plugin.Config.AfkTime.Value;
+            var game = Custom.rainWorld.processManager.currentMainLoop as RainWorldGame;
 
-            if(paused != _rewardsPaused)
+            while (_redemptionQueue.TryDequeue(out var redemption))
             {
-                _rewardsPaused = paused;
-
-                foreach(var reward in Rewards)
-                {
-                    var info = GetCachedOnlineInfo(reward.Key);
-                    if(info.IsPaused != paused)
-                    {
-                        
-                    }
-                }
-            }
-
-            while(_redemptionQueue.TryDequeue(out var redemption))
-            {
-                if(paused)
-                    redemption.MarkCancelled();
+                if((game == null || Plugin.Config.AfkTime.Value >= 0f && game.pauseMenu?.counter > Plugin.Config.AfkTime.Value * 40f) && !redemption.Reward.AvailableInMenu)
+                    redemption.MarkCanceled();
                 else
                     Redeem(redemption);
             }
         }
 
-        private bool ValidateSuccess(Task task)
-        {
-            if(task.Exception is Exception e)
-            {
-                if (e is AggregateException ae)
-                    foreach (var inner in ae.InnerExceptions)
-                        Plugin.Logger.LogError(inner);
-                else
-                    Plugin.Logger.LogError(e);
-            }
-
-            return !task.IsFaulted;
-        }
-
         private void OnRedemption(object sender, OnChannelPointsRewardRedeemedArgs e)
         {
-            _redemptionQueue.Enqueue(new PendingRedemption(this, e));
-        }
-
-        public CustomReward GetCachedOnlineInfo(string rewardTitle)
-        {
-            lock (_onlineRewardsByTitle)
-            {
-                if (_onlineRewardsByTitle.TryGetValue(rewardTitle, out var reward))
-                    return reward;
-                else
-                    return null;
-            }
-        }
-
-        public void PauseReward(string rewardTitle, bool paused)
-        {
-            CustomReward reward;
-            lock (_onlineRewardsByTitle)
-            {
-                if (!_onlineRewardsByTitle.TryGetValue(rewardTitle, out reward))
-                    reward = null;
-            }
-            
-            if(reward != null)
-            {
-                if(reward.IsPaused != paused)
-                {
-                    Plugin.Logger.LogDebug($"{(reward.IsPaused ? "Pausing" : "Unpausing")} reward: {rewardTitle}");
-                    UpdateCustomRewardRequest req = new()
-                    {
-                        IsPaused = paused
-                    };
-
-                    Api.Helix.ChannelPoints.UpdateCustomRewardAsync(ChannelId, reward.Id, req)
-                        .ContinueWith(task =>
-                        {
-                            if (ValidateSuccess(task))
-                            {
-                                foreach (var updatedReward in task.Result.Data)
-                                {
-                                    UpdateOnlineInfo(updatedReward, true);
-                                }
-                                CacheData.Save();
-                            }
-                        });
-                }
-            }
-        }
-
-        public void PatchOnlineInfo(string rewardTitle, int? cost, int? delay, bool? enabled)
-        {
-            CustomReward reward;
-            lock (_onlineRewardsByTitle)
-            {
-                if (!_onlineRewardsByTitle.TryGetValue(rewardTitle, out reward))
-                    reward = null;
-            }
-
-            if (reward != null)
-            {
-                // Only update an existing reward if the settings are different
-                if (cost.HasValue && reward.Cost != cost.Value
-                    || delay.HasValue && (reward.GlobalCooldownSetting.IsEnabled ? reward.GlobalCooldownSetting.GlobalCooldownSeconds : 0) != delay.Value
-                    || enabled.HasValue && reward.IsEnabled != enabled.Value)
-                {
-                    UpdateCustomRewardRequest req = new()
-                    {
-                        Cost = cost,
-                        IsGlobalCooldownEnabled = delay.HasValue ? delay.Value > 0 : null,
-                        GlobalCooldownSeconds = delay.HasValue && delay > 0 ? delay : null,
-                        IsEnabled = enabled
-                    };
-                    Plugin.Logger.LogDebug($"Updating reward: {rewardTitle}, cost={cost}, delay={delay}, enabled={enabled}");
-                    Api.Helix.ChannelPoints.UpdateCustomRewardAsync(ChannelId, reward.Id, req)
-                        .ContinueWith(task =>
-                        {
-                            if (ValidateSuccess(task))
-                            {
-                                foreach (var updatedReward in task.Result.Data)
-                                    UpdateOnlineInfo(updatedReward);
-                            }
-                        });
-                }
-            }
-            else
-            {
-                // Create a new reward
-                CreateCustomRewardsRequest req = new()
-                {
-                    Title = rewardTitle,
-                    Cost = cost.Value,
-                    IsGlobalCooldownEnabled = delay > 0,
-                    GlobalCooldownSeconds = delay > 0 ? delay : null,
-                    IsEnabled = enabled.Value
-                };
-                Plugin.Logger.LogDebug($"Creating reward: {rewardTitle}, cost={cost}, delay={delay}, enabled={enabled}");
-                Api.Helix.ChannelPoints.CreateCustomRewardsAsync(ChannelId, req)
-                    .ContinueWith(task =>
-                    {
-                        if (ValidateSuccess(task))
-                        {
-                            foreach (var newReward in task.Result.Data)
-                            {
-                                UpdateOnlineInfo(newReward, true);
-                            }
-                            CacheData.Save();
-                        }
-                    });
-            }
-        }
-
-        public void DeleteOnlineInfo(string rewardTitle)
-        {
-            CustomReward reward;
-            lock (_onlineRewardsByTitle)
-            {
-                if (_onlineRewardsByTitle.TryGetValue(rewardTitle, out reward))
-                {
-                    lock (_manageableRewardIds)
-                    {
-                        _manageableRewardIds.Remove(reward.Id);
-                    }
-                }
-                else
-                {
-                    reward = null;
-                }
-
-                _onlineRewardsByTitle.Remove(rewardTitle);
-            }
-
-            if (reward != null)
-            {
-                Plugin.Logger.LogDebug($"Deleting reward: {rewardTitle}");
-                Api.Helix.ChannelPoints.DeleteCustomRewardAsync(ChannelId, reward.Id)
-                    .LogFailure();
-            }
-            else
-            {
-                Plugin.Logger.LogDebug($"Skipped deleting non-existent reward: {rewardTitle}");
-            }
-
-            Plugin.Config?.RewardsChanged();
-        }
-
-        private void UpdateOnlineInfo(CustomReward reward, bool markManageable = false)
-        {
-            lock(_onlineRewardsByTitle)
-            {
-                _onlineRewardsByTitle[reward.Title] = reward;
-            }
-
-            if(markManageable)
-            {
-                lock(_manageableRewardIds)
-                {
-                    _manageableRewardIds.Add(reward.Id);
-                }
-            }
-
-            Plugin.Config?.RewardsChanged();
-        }
-
-        public bool CanManageReward(string rewardId)
-        {
-            lock(_manageableRewardIds)
-            {
-                return _manageableRewardIds.Contains(rewardId);
-            }
+            if (Rewards.TryGetValue(e.RewardRedeemed.Redemption.Reward.Title, out var rewardInfo))
+                _redemptionQueue.Enqueue(new PendingRedemption(rewardInfo, this, e.RewardRedeemed.Redemption));
         }
 
         public void Redeem(PendingRedemption redemption)
         {
             var res = Fulfillment.None;
 
-            if (Rewards.TryGetValue(redemption.RewardTitle, out var reward))
+            try
             {
-                try
+                var reward = redemption.Reward;
+                switch(reward.Handler())
                 {
-                    switch(reward.Handler())
-                    {
-                        case RewardStatus.TryLater:
-                            if(redemption.Retries >= Plugin.Config.MaxRetries.Value)
-                            {
-                                res = Fulfillment.Refund;
-                            }
-                            else
-                            {
-                                redemption.Retries++;
-                                Timer.Set(() => Redeem(redemption), UnityEngine.Random.Range(2f, 5f));
-                                res = Fulfillment.None;
-                            }
-                            break;
-
-                        case RewardStatus.Done:
-                            Integrations.ShowNotification((reward.RewardInfo.DisplayName ?? redemption.RewardTitle) + " redeemed by " + redemption.UserName);
-                            res = Fulfillment.Fulfull;
-                            break;
-
-                        case RewardStatus.Cancel:
+                    case RewardStatus.TryLater:
+                        if(redemption.Retries >= Plugin.Config.MaxRetries.Value)
+                        {
                             res = Fulfillment.Refund;
-                            break;
-                    }
+                        }
+                        else
+                        {
+                            redemption.Retries++;
+                            Timer.Set(() => Redeem(redemption), UnityEngine.Random.Range(2f, 5f));
+                            res = Fulfillment.None;
+                        }
+                        break;
+
+                    case RewardStatus.Done:
+                        Integrations.ShowNotification((reward.DisplayName ?? reward.Title) + " redeemed by " + redemption.UserName);
+                        res = Fulfillment.Fulfull;
+                        break;
+
+                    case RewardStatus.Cancel:
+                        res = Fulfillment.Refund;
+                        break;
                 }
-                catch(Exception e)
-                {
-                    Debug.Log($"Redemption failed! Reward: {redemption.RewardTitle}\nSee exception log for more info");
-                    Debug.LogException(e);
-                    res = Fulfillment.Refund;
-                }
+            }
+            catch(Exception e)
+            {
+                Plugin.Logger.LogError($"Redemption failed! Reward: {redemption.Reward.Title}\nSee exception log for more info");
+                Debug.LogException(e);
+                res = Fulfillment.Refund;
             }
 
             switch(res)
             {
                 case Fulfillment.Fulfull: redemption.MarkFulfilled(); break;
-                case Fulfillment.Refund: redemption.MarkCancelled(); break;
+                case Fulfillment.Refund: redemption.MarkCanceled(); break;
             }
         }
 
@@ -349,69 +181,65 @@ namespace TwitchIntegration
 
         public void Dispose()
         {
-            _pubSub.Disconnect();
+            _pubSub?.Disconnect();
         }
 
-        public delegate RewardStatus RedemptionHandler();
-
-        public class Reward
+        void ILogger.Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
         {
-            public TwitchRewardAttribute RewardInfo { get; }
-            public RedemptionHandler Handler { get; }
-
-            public Reward(TwitchRewardAttribute attribute, MethodInfo method)
+            BepLogLevel level = logLevel switch
             {
-                RewardInfo = attribute;
-                Handler = Delegate.CreateDelegate(typeof(RedemptionHandler), method, false) as RedemptionHandler;
-                if (Handler == null)
-                {
-                    Debug.Log("Failed to create redemption handler: " + method.Name);
-                    Handler = DefaultHandler;
-                }
-            }
+                LogLevel.Trace or LogLevel.Debug => BepLogLevel.None,
+                LogLevel.Information => BepLogLevel.Info,
+                LogLevel.Warning => BepLogLevel.Warning,
+                LogLevel.Error or LogLevel.Critical => BepLogLevel.Error,
+                _ => BepLogLevel.None
+            };
 
-            private RewardStatus DefaultHandler()
-            {
-                Debug.Log($"Tried to redeem faulty reward: {RewardInfo.RewardTitle}");
-                return RewardStatus.Cancel;
-            }
+            if (level == BepLogLevel.None) return;
+
+            Plugin.Logger.Log(level, formatter(state, exception));
         }
+
+        bool ILogger.IsEnabled(LogLevel logLevel) => true;
+
+        IDisposable ILogger.BeginScope<TState>(TState state) => null;
 
         public class PendingRedemption
         {
-            public readonly string RewardTitle;
+            public readonly RewardInfo Reward;
             public readonly string UserName;
             public int Retries;
-            private readonly OnChannelPointsRewardRedeemedArgs _source;
+            private readonly Redemption _redemption;
             private readonly IntegrationSystem _system;
 
-            public PendingRedemption(IntegrationSystem system, OnChannelPointsRewardRedeemedArgs args)
+            public PendingRedemption(RewardInfo reward, IntegrationSystem system, Redemption redemption)
             {
-                UserName = args.RewardRedeemed.Redemption.User.DisplayName;
-                RewardTitle = args.RewardRedeemed.Redemption.Reward.Title;
+                Reward = reward;
+                UserName = redemption.User.DisplayName;
                 _system = system;
-                _source = args;
+                _redemption = redemption;
             }
 
-            public PendingRedemption(string title, string user)
+            public PendingRedemption(RewardInfo reward, string user)
             {
-                RewardTitle = title;
+                Reward = reward;
                 UserName = user;
             }
 
             public void MarkFulfilled() => MarkStatus(CustomRewardRedemptionStatus.FULFILLED);
-            public void MarkCancelled() => MarkStatus(CustomRewardRedemptionStatus.CANCELED);
+            public void MarkCanceled() => MarkStatus(CustomRewardRedemptionStatus.CANCELED);
 
             private void MarkStatus(CustomRewardRedemptionStatus status)
             {
-                var redemption = _source?.RewardRedeemed.Redemption;
-                if (redemption == null
-                    || redemption.Status != "UNFULFILLED"
-                    || redemption.Reward.ShouldRedemptionsSkipRequestQueue
-                    || !_system.CanManageReward(redemption.Reward.Id)) return;
+                if (_redemption == null
+                    || _redemption.Status != "UNFULFILLED"
+                    || _redemption.Reward.ShouldRedemptionsSkipRequestQueue
+                    || Reward == null
+                    || !Reward.AutoFulfill
+                    || !Reward.Manageable) return;
 
                 var request = new UpdateCustomRewardRedemptionStatusRequest() { Status = status };
-                _system.Api.Helix.ChannelPoints.UpdateRedemptionStatusAsync(redemption.ChannelId, redemption.Reward.Id, new List<string>() { redemption.Id }, request)
+                _system.Api.Helix.ChannelPoints.UpdateRedemptionStatusAsync(_redemption.ChannelId, _redemption.Reward.Id, new List<string>() { _redemption.Id }, request)
                     .LogFailure();
             }
         }
@@ -424,6 +252,7 @@ namespace TwitchIntegration
         public string DisplayName { get; set; }
         public int DefaultCost { get; set; } = 1;
         public int DefaultDelay { get; set; } = 0;
+        public bool AvailableInMenu { get; set; } = false;
 
         public TwitchRewardAttribute(string rewardTitle)
         {

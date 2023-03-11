@@ -49,7 +49,7 @@ namespace TwitchIntegration
                     }
                     catch (Exception e)
                     {
-                        Debug.Log("Failed to fast forward timer! Check exception log for more info.");
+                        Plugin.Logger.LogError("Failed to fast forward timer! Check exception log for more info.");
                         Debug.LogException(e);
                     }
                     queue.RemoveAt(i);
@@ -89,7 +89,7 @@ namespace TwitchIntegration
                     }
                     catch(Exception e)
                     {
-                        Debug.Log("Failed to execute timer! Check exception log for more info.");
+                        Plugin.Logger.LogError("Failed to execute timer! Check exception log for more info.");
                         Debug.LogException(e);
                     }
                     queue.RemoveAt(i);

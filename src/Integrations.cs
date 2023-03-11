@@ -2,13 +2,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using UnityEngine;
 using Random = UnityEngine.Random;
 using ObjectType = AbstractPhysicalObject.AbstractObjectType;
 using CritType = CreatureTemplate.Type;
 using System.IO;
 using MonoMod.RuntimeDetour;
+using System.Reflection;
 
 /*
  * Suggested ideas:
@@ -21,12 +21,21 @@ using MonoMod.RuntimeDetour;
 
 namespace TwitchIntegration
 {
-    public static class Integrations
+    internal static class Integrations
     {
         public static RainWorld RW => Custom.rainWorld;
         public static RainWorldGame Game => RW.processManager.currentMainLoop as RainWorldGame;
         public static IEnumerable<Player> Players => Game.Players.Where(ply => ply.realizedObject is Player).Select(ply => (Player)ply.realizedObject);
         public static bool InGame => Game != null;
+
+        public static (MethodInfo, TwitchRewardAttribute)[] Attributes
+        {
+            get => _attributes ??= typeof(Integrations).GetMethods()
+                .Select(x => (x, x.GetCustomAttribute<TwitchRewardAttribute>()))
+                .Where(x => x.Item2 != null)
+                .ToArray();
+        }
+        private static (MethodInfo, TwitchRewardAttribute)[] _attributes;
 
         /*
          * This is the list of all channel points rewards.
@@ -544,7 +553,7 @@ namespace TwitchIntegration
         }
 
         // Plays a random song
-        [TwitchReward("Play Random Song")]
+        [TwitchReward("Play Random Song", AvailableInMenu = true)]
         public static RewardStatus PlayRandomSong()
         {
             var mp = RW.processManager.musicPlayer;
@@ -1392,11 +1401,10 @@ namespace TwitchIntegration
         };
         static string GetRandomSong()
         {
-            DirectoryInfo directoryInfo = new DirectoryInfo("./Assets/Futile/Resources/Music/Songs");
-            FileInfo[] files = directoryInfo.GetFiles();
-            var songNames = files.Select(f => f.Name).Where(f => songExtensionWhitelist.Any(f.EndsWith) && !songBlacklist.Contains(f)).ToArray();
+            var files = AssetManager.ListDirectory("music/songs");
+            var songNames = files.Select(Path.GetFileName).Where(f => songExtensionWhitelist.Any(f.EndsWith) && !songBlacklist.Contains(f)).ToArray();
             var songName = songNames[Random.Range(0, songNames.Length)];
-            return songName.Substring(0, songName.Length - 4);
+            return Path.GetFileNameWithoutExtension(songName);
         }
 
         static readonly Weighted<CritType>[] critTypes = new Weighted<CritType>[]
