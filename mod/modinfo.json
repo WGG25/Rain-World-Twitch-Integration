@@ -1,6 +1,7 @@
 {
   "id": "slime-cubed.twitchintegration",
   "name": "Twitch Integration",
-  "version": "2.0.0",
+  "description": "Allows Twitch channel point redemptions to affect the game.",
+  "version": "2.0.0-alpha.2",
   "authors": "Slime_Cubed"
 }

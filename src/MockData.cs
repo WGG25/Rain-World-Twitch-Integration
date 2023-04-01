@@ -10,6 +10,7 @@ using System.Text;
 using TwitchLib.Api.Core.Exceptions;
 using TwitchLib.Api.Core.Internal;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace TwitchIntegration
 {
@@ -23,9 +24,9 @@ namespace TwitchIntegration
 
         public readonly IHttpCallHandler HttpCallHandler;
 
-        public MockData()
+        public MockData(ILogger<MockHttpClient> logger)
         {
-            HttpCallHandler = new MockHttpClient(this);
+            HttpCallHandler = new MockHttpClient(this, logger);
         }
     }
 
@@ -33,7 +34,7 @@ namespace TwitchIntegration
     {
         private readonly MockData _mockData;
 
-        public MockHttpClientHandler(MockData mockData) : base(null)
+        public MockHttpClientHandler(MockData mockData, ILogger<IHttpCallHandler> logger) : base(logger)
         {
             _mockData = mockData;
         }
@@ -65,9 +66,9 @@ namespace TwitchIntegration
     {
         private readonly HttpClient _http;
 
-        public MockHttpClient(MockData mockData)
+        public MockHttpClient(MockData mockData, ILogger<MockHttpClient> logger)
         {
-            _http = new HttpClient(new MockHttpClientHandler(mockData));
+            _http = new HttpClient(new MockHttpClientHandler(mockData, logger));
         }
 
         /// <summary>

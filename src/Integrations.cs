@@ -309,21 +309,21 @@ namespace TwitchIntegration
                 {
                     IntVector2 feetPos = ply.room.RandomTile();
 
-                    // Ignore solid tiles
-                    if (ply.room.GetTile(feetPos).Solid)
-                        continue;
+                    IntVector2 floorPos = feetPos;
+                    while(!ply.room.GetTile(floorPos).Solid && floorPos.y >= 0)
+                    {
+                        floorPos.y--;
+                    }
+                    floorPos.y++;
 
-                    // Ignore tiles with a fall risk
-                    if (ply.room.RayTraceTilesForTerrain(feetPos.x, feetPos.y, feetPos.x, 0))
+                    if (ply.room.GetTile(feetPos).Solid                                                            // Solid tile
+                        || floorPos.y <= 0 && !ply.room.water                                                      // Fall risk
+                        || ply.room.readyForAI && !ply.room.aimap.AnyExitReachableFromTile(feetPos, testTemplate)  // Unreachable
+                        || isRaining && ply.room.roomRain?.rainReach[feetPos.x] < feetPos.y                        // Rainy
+                        || ply.room.waterObject is Water water && !water.IsTileAccessible(floorPos, testTemplate)) // Above lethal water
+                    {
                         continue;
-
-                    // Ignore tiles that aren't connected to a shortcut
-                    if (ply.room.readyForAI && !ply.room.aimap.AnyExitReachableFromTile(feetPos, testTemplate))
-                        continue;
-
-                    // If it's raining, ignore tiles that can get wet
-                    if (isRaining && ply.room.roomRain?.rainReach[feetPos.x] < feetPos.y)
-                        continue;
+                    }
 
                     bool success = false;
                     for (int j = 0; j < dirs.Length; j++)
@@ -1089,8 +1089,16 @@ namespace TwitchIntegration
             // Duped
             void ApplyDuped(On.Player.orig_Update orig, Player self, bool eu)
             {
-                for (int i = 0; i < 2; i++)
+                if (!self.slatedForDeletetion
+                    && self.enteringShortCut == null)
+                {
+                    for (int i = 0; i < 2; i++)
+                        orig(self, eu);
+                }
+                else
+                {
                     orig(self, eu);
+                }
             }
 
             // Wash off some status effects in water
@@ -1227,7 +1235,7 @@ namespace TwitchIntegration
                 {
                     foreach (var roomRain in Game.world.activeRooms.Select(room => room.roomRain))
                     {
-                        if (roomRain.intensity < 0.05f)
+                        if (roomRain != null && roomRain.intensity < 0.05f)
                             roomRain.intensity = 0f;
                     }
                 }

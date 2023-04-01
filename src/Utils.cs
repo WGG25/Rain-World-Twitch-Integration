@@ -1,4 +1,5 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 
 namespace TwitchIntegration
 {
@@ -15,6 +16,7 @@ namespace TwitchIntegration
             {
                 foreach (var inner in task.Exception.InnerExceptions)
                 {
+                    Plugin.Logger.LogError("Task failed!\n" + Environment.StackTrace);
                     Plugin.Logger.LogError(inner);
                     UnityEngine.Debug.LogException(inner);
                 }

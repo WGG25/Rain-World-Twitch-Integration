@@ -11,6 +11,7 @@ using RWCustom;
 using Microsoft.Extensions.Logging;
 using Debug = UnityEngine.Debug;
 using BepLogLevel = BepInEx.Logging.LogLevel;
+using TwitchLib.Api.Helix.Models.Search;
 
 namespace TwitchIntegration
 {
@@ -18,7 +19,7 @@ namespace TwitchIntegration
     {
         // Rewards
         public bool? ChannelPointsAvailable { get; private set; }
-        public Dictionary<string, RewardInfo> Rewards = new();
+        public readonly Dictionary<string, RewardInfo> Rewards = new();
 
         // Api
         public readonly TwitchAPI Api;
@@ -52,14 +53,26 @@ namespace TwitchIntegration
                 Plugin.Logger.LogInfo("Using mock API! PubSub skipped.");
             }
 
+            RefreshRewards();
+        }
+
+        public void RefreshRewards()
+        {
+            // Clear old rewards
+            foreach (var reward in Rewards)
+            {
+                reward.Value.UpdateOnlineInfo(null);
+                reward.Value.Manageable = false;
+            }
+
             // Request existing rewards
-            api.Helix.ChannelPoints.GetCustomRewardAsync(channel).ContinueWith(task =>
+            Api.Helix.ChannelPoints.GetCustomRewardAsync(ChannelId).ContinueWith(task =>
             {
                 if (Utils.ValidateSuccess(task))
                 {
                     foreach (var reward in task.Result.Data)
                     {
-                        if(Rewards.TryGetValue(reward.Title, out var info))
+                        if (Rewards.TryGetValue(reward.Title, out var info))
                         {
                             info.UpdateOnlineInfo(reward);
                         }
@@ -74,7 +87,7 @@ namespace TwitchIntegration
             });
 
             // Request owned rewards
-            api.Helix.ChannelPoints.GetCustomRewardAsync(channel, onlyManageableRewards: true).ContinueWith(task =>
+            Api.Helix.ChannelPoints.GetCustomRewardAsync(ChannelId, onlyManageableRewards: true).ContinueWith(task =>
             {
                 if (Utils.ValidateSuccess(task))
                 {

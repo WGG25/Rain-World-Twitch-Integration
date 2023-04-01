@@ -5,6 +5,7 @@ using Menu.Remix.MixedUI.ValueTypes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TwitchLib.Api.Helix.Models.Search;
 using UnityEngine;
 
 namespace TwitchIntegration
@@ -30,6 +31,7 @@ namespace TwitchIntegration
         private OpSimpleButton _createRewards;
         private OpSimpleButton _deleteRewards;
         private OpSimpleButton _applyChanges;
+        private OpSimpleButton _refresh;
         private volatile bool _rewardsDirty;
 
         public Config(Plugin plugin)
@@ -167,7 +169,7 @@ namespace TwitchIntegration
             const float fieldSpacing = fieldWidth + listSpacing;
             const float statusX = fieldX + fieldSpacing * 2f;
             const float statusWidth = 600f - listMargin - statusX;
-            const int footerItemCount = 5;
+            const int footerItemCount = 6;
             const float footerItemWidth = (600f - spacing * (footerItemCount - 1)) / footerItemCount;
             OpScrollBox sb;
 
@@ -237,7 +239,9 @@ namespace TwitchIntegration
                 _deleteRewards = new OpSimpleButton(new Vector2((footerItemWidth + spacing) * 3f, footerY), new Vector2(footerItemWidth, footerHeight), "Delete Selected")
                 { description = "Remove these rewards from your Twitch channel." },
                 _applyChanges = new OpSimpleButton(new Vector2((footerItemWidth + spacing) * 4f, footerY), new Vector2(footerItemWidth, footerHeight), "Upload Changes")
-                { description = "Apply changes made to reward cost and delay." }
+                { description = "Apply changes made to reward cost and delay." },
+                _refresh = new OpSimpleButton(new Vector2((footerItemWidth + spacing) * 5f, footerY), new Vector2(footerItemWidth, footerHeight), "Refresh")
+                { description = "Update rewards that were changed outside of this menu." }
             );
 
             _enableRewards.OnClick += ForEachSelected(ui =>
@@ -267,6 +271,13 @@ namespace TwitchIntegration
                     // PatchOnlineInfo should only send an update packet when changes have been made
                     if (ui.Reward.Manageable)
                         ui.Reward.Update(cost: ui.Cost.GetValueInt(), delay: ui.Delay.GetValueInt());
+                }
+            };
+            _refresh.OnClick += _ =>
+            {
+                if (_plugin.System is IntegrationSystem sys)
+                {
+                    sys.RefreshRewards();
                 }
             };
         }

@@ -14,6 +14,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Net.Http;
 using Newtonsoft.Json;
 using TwitchLib.Api.Core.Common;
+using Microsoft.Extensions.Logging;
 
 namespace TwitchIntegration
 {
@@ -43,13 +44,13 @@ namespace TwitchIntegration
         private readonly CancellationTokenSource _tokenSource;
         private HttpListener _server;
 
-        public LoginPrompt(string clientID, IEnumerable<AuthScopes> scopes, string cachedToken = null)
+        public LoginPrompt(string clientID, IEnumerable<AuthScopes> scopes, ILoggerFactory logger = null, string cachedToken = null)
         {
             _tokenSource = new CancellationTokenSource();
-            _loginTask = Login(clientID, scopes.ToList(), _tokenSource.Token, cachedToken);
+            _loginTask = Login(clientID, scopes.ToList(), _tokenSource.Token, logger, cachedToken);
         }
 
-        public async Task<KeyValuePair<string, TwitchAPI>> Login(string clientID, List<AuthScopes> scopes, CancellationToken ct, string cachedToken = null)
+        async Task<KeyValuePair<string, TwitchAPI>> Login(string clientID, List<AuthScopes> scopes, CancellationToken ct, ILoggerFactory logger, string cachedToken = null)
         {
             // Authorize
             TwitchAPI api;
@@ -59,7 +60,7 @@ namespace TwitchIntegration
                 ValidateAccessTokenResponse validation = null;
 
                 // Use real data
-                api = new TwitchAPI();
+                api = new TwitchAPI(logger);
                 api.Settings.ClientId = clientID;
                 api.Settings.Scopes = scopes;
 
@@ -89,7 +90,7 @@ namespace TwitchIntegration
             else
             {
                 // Use mock API
-                api = new TwitchAPI(http: Plugin.MockApi.HttpCallHandler);
+                api = new TwitchAPI(logger, http: Plugin.MockApi.HttpCallHandler);
                 api.Settings.ClientId = Plugin.MockApi.ClientID;
                 api.Settings.Scopes = scopes;
 
