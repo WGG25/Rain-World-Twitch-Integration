@@ -26,7 +26,6 @@ namespace TwitchIntegration
     {
         public static new ManualLogSource Logger { get; private set; }
         public static new Config Config { get; private set; }
-        public static MockData MockApi;
         private static BepLoggerFactory _loggerFactory;
 
         public IntegrationSystem System;
@@ -45,7 +44,6 @@ namespace TwitchIntegration
         {
             Logger = base.Logger;
             _loggerFactory = new();
-            MockApi = new(_loggerFactory.CreateLogger<MockHttpClient>());
 
             On.Menu.MainMenu.ctor += MainMenu_ctor;
             On.RainWorld.OnModsInit += (orig, self) =>
@@ -94,7 +92,13 @@ namespace TwitchIntegration
                 }
                 else
                 {
-                    _login = new LoginPrompt(_clientID, _authScopes, _loggerFactory, CacheData.OAuthToken);
+                    MockData mockApi = null;
+                    if(Input.GetKey(KeyCode.M))
+                    {
+                        mockApi = new MockData(_loggerFactory.CreateLogger<MockHttpClient>());
+                    }
+
+                    _login = new LoginPrompt(_clientID, _authScopes, mockApi, _loggerFactory, CacheData.OAuthToken);
                     button.menuLabel.text = disableText;
                 }
             }, 1);
@@ -107,7 +111,7 @@ namespace TwitchIntegration
                 var login = _login;
                 _login = null;
 
-                System = new IntegrationSystem(login.Result.Value, login.Result.Key);
+                System = new IntegrationSystem(login.Result.Value, login.Result.Key, login.MockApi);
 
                 if (Config.StayLoggedIn.Value)
                 {

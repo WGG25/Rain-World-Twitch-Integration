@@ -38,15 +38,17 @@ namespace TwitchIntegration
             }
         }
 
+        public readonly MockData MockApi;
         public string Token { get; set; }
 
         private readonly Task<KeyValuePair<string, TwitchAPI>> _loginTask;
         private readonly CancellationTokenSource _tokenSource;
         private HttpListener _server;
 
-        public LoginPrompt(string clientID, IEnumerable<AuthScopes> scopes, ILoggerFactory logger = null, string cachedToken = null)
+        public LoginPrompt(string clientID, IEnumerable<AuthScopes> scopes, MockData mockApi = null, ILoggerFactory logger = null, string cachedToken = null)
         {
             _tokenSource = new CancellationTokenSource();
+            MockApi = mockApi;
             _loginTask = Login(clientID, scopes.ToList(), _tokenSource.Token, logger, cachedToken);
         }
 
@@ -55,7 +57,7 @@ namespace TwitchIntegration
             // Authorize
             TwitchAPI api;
 
-            if (Plugin.MockApi == null)
+            if (MockApi == null)
             {
                 ValidateAccessTokenResponse validation = null;
 
@@ -90,18 +92,18 @@ namespace TwitchIntegration
             else
             {
                 // Use mock API
-                api = new TwitchAPI(logger, http: Plugin.MockApi.HttpCallHandler);
-                api.Settings.ClientId = Plugin.MockApi.ClientID;
+                api = new TwitchAPI(logger, http: MockApi.HttpCallHandler);
+                api.Settings.ClientId = MockApi.ClientID;
                 api.Settings.Scopes = scopes;
 
                 var client = new HttpClient();
 
                 var uri = new UriBuilder("http", "localhost", 8080, "auth/authorize");
-                uri.Query = "client_id=" + Plugin.MockApi.ClientID
-                    + "&client_secret=" + Plugin.MockApi.ClientSecret
+                uri.Query = "client_id=" + MockApi.ClientID
+                    + "&client_secret=" + MockApi.ClientSecret
                     + "&grant_type=user_token"
                     + "&grant_type=user_token"
-                    + "&user_id=" + Plugin.MockApi.UserID
+                    + "&user_id=" + MockApi.UserID
                     + "&scope=" + string.Join("%20", scopes.Select(Helpers.AuthScopesToString));
 
                 var res = await client.PostAsync(uri.Uri, new StringContent(""));

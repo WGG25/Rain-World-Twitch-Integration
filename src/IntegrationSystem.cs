@@ -23,13 +23,15 @@ namespace TwitchIntegration
 
         // Api
         public readonly TwitchAPI Api;
+        public readonly MockData MockApi;
         public readonly string ChannelId;
         private readonly TwitchPubSub _pubSub;
         private readonly ConcurrentQueue<PendingRedemption> _redemptionQueue = new();
 
-        public IntegrationSystem(TwitchAPI api, string channel)
+        public IntegrationSystem(TwitchAPI api, string channel, MockData mockApi = null)
         {
             Api = api;
+            MockApi = mockApi;
             ChannelId = channel;
 
             // Scan for integration methods
@@ -38,7 +40,7 @@ namespace TwitchIntegration
                 Rewards[pair.Item2.RewardTitle] = new RewardInfo(pair.Item2, pair.Item1, this);
             }
 
-            if (Plugin.MockApi == null)
+            if (MockApi == null)
             {
                 Plugin.Logger.LogInfo("Connecting PubSub...");
                 _pubSub = new(this);
