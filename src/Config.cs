@@ -15,8 +15,7 @@ namespace TwitchIntegration
         public readonly Configurable<bool> StayLoggedIn;
         public readonly Configurable<int> MaxRetries;
         public readonly Configurable<float> AfkTime;
-        //public readonly Configurable<float> AfkReturnTime;
-        //public readonly Configurable<bool> PauseWhileAFK;
+        public readonly Configurable<bool> ClassicColors;
         private readonly Plugin _plugin;
         private readonly Dictionary<string, Configurable<bool>> _autoFulfill = new();
 
@@ -41,8 +40,7 @@ namespace TwitchIntegration
             StayLoggedIn = config.Bind("stay_logged_in", false);
             MaxRetries = config.Bind("max_retries", 5);
             AfkTime = config.Bind("afk_time", 5f, new ConfigAcceptableRange<float>(-1f, float.PositiveInfinity));
-            //AfkReturnTime = config.Bind("afk_return_time", 3f);
-            //PauseWhileAfk = config.Bind("pause_while_afk", true);
+            ClassicColors = config.Bind("classic_colors", true);
 
             foreach(var pair in Integrations.Attributes)
             {
@@ -120,24 +118,14 @@ namespace TwitchIntegration
             );
             y -= itemHeight + spacing;
 
-            /*
-            // Temporarily disabled
-            // Pausing rewards complicates logic, especially when quitting under abnormal circumstances, and requires up to 50 requests to full complete
-
+            // Return to the original color generation method
             Tabs[0].AddItems(
-                new OpUpdown(AfkReturnTime, new Vector2(columnX, y), 100f, 1)
-                { description = "Enabled reward redemptions after this many seconds in game." },
-                new OpLabel(new Vector2(columnX + 100f + spacing, y), new Vector2(columnWidth - 100f - spacing, 24f), "AFK Return Delay")
+                new OpCheckBox(ClassicColors, columnX, y)
+                { description = "Use brighter, less cohesive color palettes when generating level and slugcat colors." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Classic Colors")
             );
             y -= itemHeight + spacing;
 
-            Tabs[0].AddItems(
-                new OpCheckBox(PauseWhileAFK, columnX, y)
-                { description = "Disable reward redemptions while in menus or paused." },
-                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Pause Rewards when AFK")
-            );
-            y -= itemHeight + spacing;
-            */
 
             _logOut.OnClick += btn =>
             {

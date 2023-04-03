@@ -458,18 +458,22 @@ namespace TwitchIntegration
         {
             if (!InGame) return RewardStatus.Cancel;
 
-            Color bodyColor = new Color(Random.Range(0.02f, 1f), Random.Range(0.02f, 1f), Random.Range(0.02f, 1f));
-            Color eyeColor = new Color(Random.Range(0.02f, 1f), Random.Range(0.02f, 1f), Random.Range(0.02f, 1f));
+            var colors = new Color[3];
 
-            Color SetBodyColor(On.PlayerGraphics.orig_SlugcatColor orig, SlugcatStats.Name name)
+            if (Plugin.Config.ClassicColors.Value)
             {
-                return bodyColor;
+                for (int i = 0; i < 3; i++)
+                    colors[i] = new Color(Random.Range(0.02f, 1f), Random.Range(0.02f, 1f), Random.Range(0.02f, 1f));
             }
-
-            void SetEyeColor(On.PlayerGraphics.orig_ApplyPalette orig, PlayerGraphics self, RoomCamera.SpriteLeaser sLeaser, RoomCamera rCam, RoomPalette palette)
+            else
             {
-                orig(self, sLeaser, rCam, palette);
-                sLeaser.sprites[9].color = eyeColor;
+                var body = new HSLColor(Random.value, Mathf.Pow(Random.value, 0.75f), Custom.ClampedRandomVariation(0.5f, 0.5f, 0.6f)).FilterBlack();
+                var eye = new HSLColor(Custom.WrappedRandomVariation(body.hue, 0.5f, 0.3f), Random.value, Custom.PushFromHalf(body.lightness, 3f)).FilterBlack();
+                var extra = new HSLColor(Custom.WrappedRandomVariation(body.hue + 0.5f, 0.5f, 0.8f), Random.value, Random.value).FilterBlack();
+
+                colors[0] = body.rgb;
+                colors[1] = eye.rgb;
+                colors[2] = extra.rgb;
             }
 
             // Update existing player graphics
@@ -487,17 +491,27 @@ namespace TwitchIntegration
                 }
             }
 
+            bool EnableCustomColors(On.PlayerGraphics.orig_CustomColorsEnabled orig)
+            {
+                return true;
+            }
+
+            Color GetCustomColors(On.PlayerGraphics.orig_CustomColorSafety orig, int index)
+            {
+                return index >= 0 && index < colors.Length ? colors[index] : orig(index);
+            }
+
             // Add a hook to change player colors
-            On.PlayerGraphics.SlugcatColor += SetBodyColor;
-            On.PlayerGraphics.ApplyPalette += SetEyeColor;
+            On.PlayerGraphics.CustomColorsEnabled += EnableCustomColors;
+            On.PlayerGraphics.CustomColorSafety += GetCustomColors;
             UpdatePlayerColors();
 
 
-            // Add a timer to undo that hook
+            // Add a timer to undo the hooks
             Timer.Set(() =>
             {
-                On.PlayerGraphics.SlugcatColor -= SetBodyColor;
-                On.PlayerGraphics.ApplyPalette -= SetEyeColor;
+                On.PlayerGraphics.CustomColorsEnabled -= EnableCustomColors;
+                On.PlayerGraphics.CustomColorSafety -= GetCustomColors;
                 if (InGame)
                     UpdatePlayerColors();
             }, 60f);
@@ -654,44 +668,118 @@ namespace TwitchIntegration
         {
             if (!InGame) return RewardStatus.Cancel;
 
-            // Generate a new palette that doesn't look completely like clown vomit
-            HSLColor skyCol = new HSLColor(Random.value, Random.value, Random.value).FilterBlack();
-            HSLColor fogCol = skyCol.Randomize(0.1f).FilterBlack();
-
-            HSLColor blackCol = new HSLColor(Random.value, Random.value * 0.5f, Random.value * 0.4f).FilterBlack();
-            HSLColor itemCol = blackCol.Randomize(0.1f).FilterBlack();
-
-            HSLColor waterCol = new HSLColor(Random.value, Random.value, Random.value).FilterBlack();
-            HSLColor farWaterCol = waterCol.Push(Random.value * 0.2f - 0.1f, -0.5f, -0.2f).FilterBlack();
-            HSLColor surfCol = waterCol.Push(Random.value * 0.2f - 0.1f, Random.value * 0.25f, Random.value * 0.5f - 0.25f);
-            HSLColor farSurfCol = surfCol.Push(0f, Random.value * -0.5f, Random.value * 0.2f);
-            HSLColor surfHighlightCol = surfCol.Randomize(0.2f);
-
-            HSLColor fogAmount = new HSLColor(0f, 0f, Random.value);
-            HSLColor shortcut1 = new HSLColor(Random.value, Random.value, Random.value);
-            HSLColor shortcut2 = shortcut1.Randomize(0.2f);
-            HSLColor shortcut3 = shortcut2.Randomize(0.2f);
-            HSLColor shortcutSymbol = new HSLColor(Random.value, Random.value, Random.value);
-
-            HSLColor darkness = new HSLColor(0f, 0f, Random.value);
-            HSLColor rainPalette = new HSLColor(0f, 0f, Random.value);
+            HSLColor skyCol, fogCol, blackCol, itemCol, waterCol, farWaterCol,
+                surfCol, farSurfCol, surfHighlightCol, fogAmount, shortcut1,
+                shortcut2, shortcut3, shortcutSymbol, darkness;
 
             Color[,] geometry = new Color[30, 6];
-            {
-                HSLColor rowCol = new HSLColor(Random.value, Random.value, Random.value);
-                HSLColor firstCol = rowCol;
-                for (int y = 0; y < 6; y++)
-                {
-                    if(y == 3)
-                        rowCol = firstCol.Randomize(0.5f).Push(0f, Random.value * -0.25f, Random.value * -0.25f);
 
-                    HSLColor columnCol = rowCol;
+            if (Plugin.Config.ClassicColors.Value)
+            {
+                // Generate a new palette that doesn't look completely like clown vomit
+                skyCol = new HSLColor(Random.value, Random.value, Random.value).FilterBlack();
+                fogCol = skyCol.Randomize(0.1f).FilterBlack();
+
+                blackCol = new HSLColor(Random.value, Random.value * 0.5f, Random.value * 0.4f).FilterBlack();
+                itemCol = blackCol.Randomize(0.1f).FilterBlack();
+
+                waterCol = new HSLColor(Random.value, Random.value, Random.value).FilterBlack();
+                farWaterCol = waterCol.Push(Random.value * 0.2f - 0.1f, -0.5f, -0.2f).FilterBlack();
+                surfCol = waterCol.Push(Random.value * 0.2f - 0.1f, Random.value * 0.25f, Random.value * 0.5f - 0.25f);
+                farSurfCol = surfCol.Push(0f, Random.value * -0.5f, Random.value * 0.2f);
+                surfHighlightCol = surfCol.Randomize(0.2f);
+
+                fogAmount = new HSLColor(0f, 0f, Random.value);
+                shortcut1 = new HSLColor(Random.value, Random.value, Random.value);
+                shortcut2 = shortcut1.Randomize(0.2f);
+                shortcut3 = shortcut2.Randomize(0.2f);
+                shortcutSymbol = new HSLColor(Random.value, Random.value, Random.value);
+
+                float averageLightness = 0f;
+                {
+                    HSLColor rowCol = new HSLColor(Random.value, Random.value, Random.value);
+                    HSLColor firstCol = rowCol;
+                    for (int y = 0; y < 6; y++)
+                    {
+                        if (y == 3)
+                            rowCol = firstCol.Randomize(0.5f).Push(0f, Random.value * -0.25f, Random.value * -0.25f);
+
+                        HSLColor columnCol = rowCol;
+                        for (int x = 0; x < 30; x++)
+                        {
+                            geometry[x, y] = columnCol.rgb;
+                            columnCol = columnCol.Randomize(0.05f).Push(0f, -0.025f, 0.025f);
+                        }
+                        rowCol = rowCol.Randomize(0.25f);
+                    }
+
+                    averageLightness += rowCol.lightness / (30 * 6);
+                }
+
+                darkness = new HSLColor(0f, 0f, Mathf.Clamp01(2f - 2f * averageLightness));
+            }
+            else
+            {
+                darkness = new HSLColor(0f, 0f, Custom.PushFromHalf(Random.value, 1.75f));
+                float bright = 1f - darkness.lightness;
+
+                skyCol = new HSLColor(Random.value, 0.75f * Mathf.Pow(Random.value, 2f), 1f - bright);
+                fogCol = skyCol.Randomize(0.1f);
+                blackCol = new HSLColor(Random.value, Random.value * 0.2f, Mathf.Min(bright, Mathf.Pow(Random.value, 2f))).FilterBlack();
+                itemCol = blackCol.Randomize(0.05f).FilterBlack();
+
+                waterCol = new HSLColor(Random.value, Random.value, Custom.ClampedRandomVariation(0.05f + bright * 0.3f, 0.5f, 0.2f));
+                farWaterCol = HSLColor.Lerp(waterCol.Randomize(0.2f), fogCol, Random.value * 0.5f + 0.5f);
+                surfCol = new HSLColor(waterCol.hue, Custom.ClampedRandomVariation(waterCol.saturation + 0.2f, 0.4f, 0.5f), Custom.ClampedRandomVariation(waterCol.lightness + 0.3f, 0.5f, 0.5f));
+                farSurfCol = HSLColor.Lerp(surfCol.Randomize(0.2f), fogCol, Random.value * 0.5f + 0.5f);
+                surfHighlightCol = surfCol.Randomize(0.2f);
+                surfHighlightCol.lightness = Mathf.Clamp01(surfHighlightCol.lightness + 0.2f);
+
+                fogAmount = new HSLColor(0f, 0f, Random.value);
+                shortcut3 = new HSLColor(Random.value, Random.value, Random.value);
+                shortcut1 = new HSLColor(Custom.WrappedRandomVariation(shortcut3.hue, 0.3f, 0.3f), Custom.ClampedRandomVariation(shortcut3.saturation, 0.3f, 0.4f), Random.value * shortcut3.lightness);
+                shortcut2 = HSLColor.Lerp(shortcut1, shortcut3, Random.value * 0.5f + 0.25f);
+                shortcutSymbol = new HSLColor(Random.value, Random.value, Random.value);
+
+                var geoMain = new HSLColor(Random.value, Mathf.Pow(Random.value, 1.75f), 0.7f * bright);
+                var geoBright = new HSLColor(Custom.WrappedRandomVariation(geoMain.hue, 0.3f, 0.6f), Custom.ClampedRandomVariation(geoMain.saturation, 0.3f, 0.4f), Custom.ClampedRandomVariation(geoMain.lightness + 0.3f, 0.3f, 0.5f));
+                var geoDark = new HSLColor(Custom.WrappedRandomVariation(geoMain.hue, 0.3f, 0.6f), Custom.ClampedRandomVariation(geoMain.saturation, 0.3f, 0.4f), Custom.ClampedRandomVariation(geoMain.lightness - 0.4f * bright, 0.3f * bright, 0.2f));
+                geoDark = HSLColor.Lerp(geoDark, fogCol, Random.value * fogAmount.lightness);
+
+                for (int y = 0; y < 5; y++)
+                {
+                    HSLColor start;
+                    HSLColor end;
+                    if (y < 3)
+                    {
+                        start = HSLColor.Lerp(geoMain, geoDark, 0.5f + y * 0.25f).Randomize(0.1f);
+                        end = HSLColor.Lerp(geoBright, geoMain, 0.5f + y * 0.25f).Randomize(0.1f);
+                    }
+                    else
+                    {
+                        start = HSLColor.Lerp(geoMain, geoDark, y == 5 ? 1f : 0.75f);
+                        end = geoMain;
+                    }
+                    HSLColor[] sections = new HSLColor[Random.Range(3, 6)];
+
+                    float pow = Random.Range(0.5f, 1.5f);
+                    for(int i = 0; i < sections.Length; i++)
+                    {
+                        sections[i] = HSLColor.Lerp(start, end, Mathf.Pow(i / (sections.Length - 1f), pow));
+                    }
+
                     for (int x = 0; x < 30; x++)
                     {
-                        geometry[x, y] = columnCol.rgb;
-                        columnCol = columnCol.Randomize(0.05f).Push(0f, -0.025f, 0.025f);
+                        float t = x / 29f * (sections.Length - 1f);
+
+                        int from = Mathf.FloorToInt(t);
+                        int to = Mathf.CeilToInt(t);
+                        geometry[x, y] = HSLColor.Lerp(sections[from], sections[to], Custom.PushFromHalf(t - from, 2f)).rgb;
                     }
-                    rowCol = rowCol.Randomize(0.25f);
+                }
+                for(int x = 0; x < 30; x++)
+                {
+                    geometry[x, 5] = geometry[x, 4];
                 }
             }
 
@@ -717,6 +805,7 @@ namespace TwitchIntegration
                 colors[topRow + 11] = shortcut2.rgb;
                 colors[topRow + 12] = shortcut3.rgb;
                 colors[topRow + 13] = shortcutSymbol.rgb;
+                colors[topRow + 30] = darkness.rgb;
                 for (int y = 0; y < 6; y++)
                 {
                     for (int x = 0; x < 30; x++)
