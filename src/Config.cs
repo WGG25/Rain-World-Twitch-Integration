@@ -5,7 +5,6 @@ using Menu.Remix.MixedUI.ValueTypes;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using TwitchLib.Api.Helix.Models.Search;
 using UnityEngine;
 
 namespace TwitchIntegration
@@ -119,12 +118,12 @@ namespace TwitchIntegration
             y -= itemHeight + spacing;
 
             // Return to the original color generation method
-            Tabs[0].AddItems(
-                new OpCheckBox(ClassicColors, columnX, y)
-                { description = "Use brighter, less cohesive color palettes when generating level and slugcat colors." },
-                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Classic Colors")
-            );
-            y -= itemHeight + spacing;
+            // Tabs[0].AddItems(
+            //     new OpCheckBox(ClassicColors, columnX, y)
+            //     { description = "Use brighter, less cohesive color palettes when generating level and slugcat colors." },
+            //     new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Classic Colors")
+            // );
+            // y -= itemHeight + spacing;
 
 
             _logOut.OnClick += btn =>

@@ -139,7 +139,7 @@ namespace TwitchIntegration
                 {
                     ct.ThrowIfCancellationRequested();
 
-                    // Receive post with code
+                    // Receive post with code, returning a status message
                     var client = await server.GetContextAsync();
                     if (client.Request.HttpMethod == "POST")
                     {
@@ -153,20 +153,56 @@ namespace TwitchIntegration
                                 break;
                             }
                         }
-                    }
 
-                    // Send response
-                    string localPath = client.Request.Url.LocalPath;
-                    if (localPath is "/" or "/code")
-                    {
-                        client.Response.ContentType = "text/html";
-                        client.Response.StatusCode = 200;
-                        client.Response.Close(response, true);
+                        client.Response.ContentType = "text/plain";
+                        int status;
+                        string text;
+                        if(accessToken != null)
+                        {
+                            var validation = await api.Auth.ValidateAccessTokenAsync(accessToken);
+                            if(validation == null)
+                            {
+                                status = 400;
+                                text = "Error: Couldn't validate login token!";
+                            }
+                            else
+                            {
+                                var info = await api.Helix.Users.GetUsersAsync(new() { validation.UserId }, accessToken: accessToken);
+                                if (string.IsNullOrEmpty(info.Users[0].BroadcasterType))
+                                {
+                                    status = 400;
+                                    text = $"Error: {validation.Login} must be a partner or affiliate to use this mod!";
+                                }
+                                else
+                                {
+                                    status = 200;
+                                    text = $"Success: Logged in as {validation.Login}!";
+                                }
+                            }
+                        }
+                        else
+                        {
+                            status = 400;
+                            text = "Error: Couldn't read login token!";
+                        }
+                        client.Response.StatusCode = status;
+                        client.Response.Close(System.Text.Encoding.ASCII.GetBytes(text), false);
                     }
                     else
                     {
-                        client.Response.StatusCode = 404;
-                        client.Response.Close();
+                        // Send response
+                        string localPath = client.Request.Url.LocalPath;
+                        if (localPath is "/" or "/code")
+                        {
+                            client.Response.ContentType = "text/html";
+                            client.Response.StatusCode = 200;
+                            client.Response.Close(response, false);
+                        }
+                        else
+                        {
+                            client.Response.StatusCode = 404;
+                            client.Response.Close();
+                        }
                     }
                 }
 

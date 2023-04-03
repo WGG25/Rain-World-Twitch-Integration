@@ -31,6 +31,7 @@ namespace TwitchIntegration
         public IntegrationSystem System;
 
         private LoginPrompt _login;
+        private FLabel _loginErrorLabel;
         private bool _init;
 
         private static readonly string _clientID = "wtm2ouib4loubtj0tu2l6t69erfsgd";
@@ -121,6 +122,31 @@ namespace TwitchIntegration
             }
 
             System?.Update();
+
+            if(System != null
+                && System.ChannelPointsAvailable == false
+                && RWCustom.Custom.rainWorld.processManager.currentMainLoop is MainMenu menu)
+            {
+                if (_loginErrorLabel == null)
+                {
+                    _loginErrorLabel = new FLabel(RWCustom.Custom.GetFont(), "Channel points not available!");
+
+                    var btn = menu.mainMenuButtons.First(x => x.signalText == "TOGGLE_TWITCH");
+                    _loginErrorLabel.alignment = FLabelAlignment.Left;
+                    _loginErrorLabel.SetPosition(btn.pos.x + 150.1f, btn.pos.y + 15.1f);
+                    _loginErrorLabel.color = new Color(1f, 0.15f, 0.15f);
+
+                    menu.container.AddChild(_loginErrorLabel);
+                }
+            }
+            else
+            {
+                if(_loginErrorLabel != null)
+                {
+                    _loginErrorLabel.RemoveFromContainer();
+                    _loginErrorLabel = null;
+                }
+            }
         }
 
         private void AddCommands()
@@ -210,7 +236,6 @@ namespace TwitchIntegration
             public BepLoggerWrapper(string name)
             {
                 _name = name;
-                Logger.LogDebug("Wrapper created: " + name);
             }
 
             public IDisposable BeginScope<TState>(TState state) => null;
