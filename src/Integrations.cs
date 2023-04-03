@@ -9,6 +9,7 @@ using CritType = CreatureTemplate.Type;
 using System.IO;
 using MonoMod.RuntimeDetour;
 using System.Reflection;
+using Music;
 
 /*
  * Suggested ideas:
@@ -559,19 +560,32 @@ namespace TwitchIntegration
             var mp = RW.processManager.musicPlayer;
             if (mp == null) return RewardStatus.Cancel;
 
-            mp.GameRequestsSong(new MusicEvent()
+            var songName = GetRandomSong();
+            if (songName == null) return RewardStatus.Cancel;
+
+            Debug.Log("Play random song " + songName);
+
+            var song = new Song(mp, songName, MusicPlayer.MusicContext.StoryMode)
             {
-                songName = GetRandomSong(),
-                prio = Mathf.Max(1f, mp.song?.priority + 0.01f ?? 1f),
-                maxThreatLevel = 1f,
-                volume = 0.3f,
+                fadeOutAtThreat = 1f,
+                Loop = false,
+                priority = 1f,
+                baseVolume = 0.3f,
                 fadeInTime = 2f,
-                loop = false,
-                oneSongPerCycle = false,
                 stopAtDeath = false,
-                stopAtGate = false,
-                roomsRange = -1
-            });
+                stopAtGate = false
+            };
+
+            if (mp.song == null)
+            {
+                mp.song = song;
+                mp.song.playWhenReady = true;
+            }
+            else
+            {
+                mp.nextSong = song;
+                mp.nextSong.playWhenReady = false;
+            }
 
             return RewardStatus.Done;
         }
@@ -1410,7 +1424,19 @@ namespace TwitchIntegration
         static string GetRandomSong()
         {
             var files = AssetManager.ListDirectory("music/songs");
-            var songNames = files.Select(Path.GetFileName).Where(f => songExtensionWhitelist.Any(f.EndsWith) && !songBlacklist.Contains(f)).ToArray();
+            var songNames = files
+                .Select(Path.GetFileName)
+                .Where(f => f != null 
+                    && songExtensionWhitelist.Any(f.EndsWith)
+                    && !songBlacklist.Contains(f))
+                .ToArray();
+
+            if(songNames.Length == 0)
+            {
+                Plugin.Logger.LogWarning("No songs to play!");
+                return null;
+            }
+
             var songName = songNames[Random.Range(0, songNames.Length)];
             return Path.GetFileNameWithoutExtension(songName);
         }

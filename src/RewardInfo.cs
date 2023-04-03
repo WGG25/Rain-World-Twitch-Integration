@@ -94,7 +94,7 @@ namespace TwitchIntegration
                 {
                     Cost = cost,
                     IsGlobalCooldownEnabled = delay > 0,
-                    GlobalCooldownSeconds = delay > 0 ? delay : null,
+                    GlobalCooldownSeconds = delay,
                     IsEnabled = enabled,
                     IsPaused = paused
                 };
