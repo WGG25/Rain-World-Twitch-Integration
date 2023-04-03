@@ -129,7 +129,7 @@ namespace TwitchIntegration
             {
                 if (_loginErrorLabel == null)
                 {
-                    _loginErrorLabel = new FLabel(RWCustom.Custom.GetFont(), "Channel points not available!");
+                    _loginErrorLabel = new FLabel(RWCustom.Custom.GetFont(), "Channel points not available!\nBroadcaster must be a Twitch affiliate.");
 
                     var btn = menu.mainMenuButtons.First(x => x.signalText == "TOGGLE_TWITCH");
                     _loginErrorLabel.alignment = FLabelAlignment.Left;
