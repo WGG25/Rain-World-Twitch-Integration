@@ -1172,13 +1172,14 @@ namespace TwitchIntegration
         [TwitchReward("Make Slugcat Heavy")]
         public static RewardStatus HighGravityStatusEffect() => GiveStatusEffect(StatusEffect.Heavy);
 
-        // Gives the player the mushrom effect
+        // Gives the player the mushroom effect
         [TwitchReward("Drugs")]
         public static RewardStatus GiveShroomEffect() => GiveStatusEffect(StatusEffect.Mushroomed);
 
         private static RewardStatus GiveStatusEffect(StatusEffect effect)
         {
             if (activeStatusEffects.Contains(effect)) return RewardStatus.Cancel;
+            if (effect == StatusEffect.Mushroomed && Players.Any(p => p.mushroomCounter > 0)) return RewardStatus.Cancel;
             activeStatusEffects.Add(effect);
 
             // Bounce
@@ -1204,24 +1205,31 @@ namespace TwitchIntegration
                 }
             }
 
-            // Wash off some status effects in water
-            void WashOffHeavy(On.Player.orig_Update orig, Player self, bool eu)
+            // Gravity
+            void ApplyLight(On.Player.orig_UpdateMSC orig, Player self)
             {
-                if (self.Submersion > 0.5f)
-                {
-                    ShowNotification("Heavy Status Effect has washed off!");
-                    Timer.FastForward("Heavy Status");
-                }
-                orig(self, eu);
-            }
-            void WashOffLight(On.Player.orig_Update orig, Player self, bool eu)
-            {
+                orig(self);
+
                 if (self.Submersion > 0.5f)
                 {
                     ShowNotification("Light Status Effect has washed off!");
                     Timer.FastForward("Light Status");
                 }
-                orig(self, eu);
+                else if (!self.monkAscension)
+                    self.gravity = self.customPlayerGravity * 0.5f;
+            }
+
+            void ApplyHeavy(On.Player.orig_UpdateMSC orig, Player self)
+            {
+                orig(self);
+
+                if (self.Submersion > 0.5f)
+                {
+                    ShowNotification("Heavy Status Effect has washed off!");
+                    Timer.FastForward("Heavy Status");
+                }
+                else if (!self.monkAscension)
+                    self.gravity = self.customPlayerGravity * 1.65f;
             }
 
             bool didSomething = false;
@@ -1249,43 +1257,41 @@ namespace TwitchIntegration
                     break;
 
                 case StatusEffect.Light:
-                    foreach (var ply in Players)
+                    didSomething = true;
+                    On.Player.UpdateMSC += ApplyLight;
+                    Timer.FastForward("Heavy Status");
+                    Timer.Set(() =>
                     {
-                        ply.g /= 2f;
-                        Timer.Set(() => ply.g *= 2f, 30f, "Light Status");
-                        didSomething = true;
-                    }
-                    if (didSomething)
-                    {
-                        On.Player.Update += WashOffLight;
-                        Timer.Set(() =>
+                        On.Player.UpdateMSC -= ApplyLight;
+                        activeStatusEffects.Remove(effect);
+                        if (!Timer.FastForwarding)
                         {
-                            On.Player.Update -= WashOffLight;
-                            activeStatusEffects.Remove(effect);
-                            if (!Timer.FastForwarding)
-                                ShowNotification("Light Status Effect has worn off!");
-                        }, 30f, "Light Status");
-                    }
+                            ShowNotification("Light Status Effect has worn off!");
+                        }
+                        foreach (var ply in Players)
+                        {
+                            ply.gravity = ply.customPlayerGravity;
+                        }
+                    }, 30f, "Light Status");
                     break;
 
                 case StatusEffect.Heavy:
-                    foreach (var ply in Players)
+                    didSomething = true;
+                    On.Player.UpdateMSC += ApplyHeavy;
+                    Timer.FastForward("Light Status");
+                    Timer.Set(() =>
                     {
-                        ply.g *= 1.65f;
-                        Timer.Set(() => ply.g /= 1.65f, 15f, "Heavy Status");
-                        didSomething = true;
-                    }
-                    if (didSomething)
-                    {
-                        On.Player.Update += WashOffHeavy;
-                        Timer.Set(() =>
+                        On.Player.UpdateMSC -= ApplyHeavy;
+                        activeStatusEffects.Remove(effect);
+                        if (!Timer.FastForwarding)
                         {
-                            On.Player.Update -= WashOffHeavy;
-                            activeStatusEffects.Remove(effect);
-                            if (!Timer.FastForwarding)
-                                ShowNotification("Heavy Status Effect has worn off!");
-                        }, 15f, "Heavy Status");
-                    }
+                            ShowNotification("Heavy Status Effect has worn off!");
+                        }
+                        foreach (var ply in Players)
+                        {
+                            ply.gravity = ply.customPlayerGravity;
+                        }
+                    }, 15f, "Heavy Status");
                     break;
 
                 case StatusEffect.Bouncy:
