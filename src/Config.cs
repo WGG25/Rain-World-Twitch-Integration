@@ -244,7 +244,7 @@ namespace TwitchIntegration
             _createRewards.OnClick += ForEachSelected(ui =>
             {
                 if (!ui.Reward.Created)
-                    ui.Reward.Create(ui.Cost.GetValueInt(), ui.Delay.GetValueInt());
+                    ui.Reward.Create(ui.Cost.GetValueIntSafe(), ui.Delay.GetValueIntSafe());
             });
             _deleteRewards.OnClick += ForEachSelected(ui =>
             {
@@ -257,7 +257,7 @@ namespace TwitchIntegration
                 {
                     // PatchOnlineInfo should only send an update packet when changes have been made
                     if (ui.Reward.Manageable)
-                        ui.Reward.Update(cost: ui.Cost.GetValueInt(), delay: ui.Delay.GetValueInt());
+                        ui.Reward.Update(cost: ui.Cost.GetValueIntSafe(), delay: ui.Delay.GetValueIntSafe());
                 }
             };
             _refresh.OnClick += _ =>
@@ -440,8 +440,8 @@ namespace TwitchIntegration
             {
                 return ui.Reward.Manageable
                     && ui.Reward.Created
-                    && (ui.Cost.GetValueInt() != ui.Reward.Cost
-                        || ui.Delay.GetValueInt() != ui.Reward.Delay);
+                    && (ui.Cost.GetValueIntSafe() != ui.Reward.Cost
+                        || ui.Delay.GetValueIntSafe() != ui.Reward.Delay);
             });
         }
 

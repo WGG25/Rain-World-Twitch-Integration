@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Menu.Remix.MixedUI;
+using System;
 using System.Threading.Tasks;
 
 namespace TwitchIntegration
@@ -23,6 +24,18 @@ namespace TwitchIntegration
             }
 
             return !task.IsFaulted;
+        }
+
+        public static int GetValueIntSafe(this OpUpdown upDown)
+        {
+            try
+            {
+                return upDown.GetValueInt();
+            }
+            catch
+            {
+                return 0;
+            }
         }
     }
 }
