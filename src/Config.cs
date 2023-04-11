@@ -15,6 +15,7 @@ namespace TwitchIntegration
         public readonly Configurable<int> MaxRetries;
         public readonly Configurable<float> AfkTime;
         public readonly Configurable<bool> ClassicColors;
+        public readonly Configurable<bool> DetachOnTeleport;
         private readonly Plugin _plugin;
         private readonly Dictionary<string, Configurable<bool>> _autoFulfill = new();
 
@@ -40,6 +41,7 @@ namespace TwitchIntegration
             MaxRetries = config.Bind("max_retries", 5);
             AfkTime = config.Bind("afk_time", 5f, new ConfigAcceptableRange<float>(-1f, float.PositiveInfinity));
             ClassicColors = config.Bind("classic_colors", true);
+            DetachOnTeleport = config.Bind("detach_on_teleport", true);
 
             foreach(var pair in Integrations.Attributes)
             {
@@ -117,6 +119,9 @@ namespace TwitchIntegration
             );
             y -= itemHeight + spacing;
 
+            // Add a spacer between meta and game options
+            y -= itemHeight + spacing;
+
             // Return to the original color generation method
             // Tabs[0].AddItems(
             //     new OpCheckBox(ClassicColors, columnX, y)
@@ -124,6 +129,14 @@ namespace TwitchIntegration
             //     new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Classic Colors")
             // );
             // y -= itemHeight + spacing;
+
+            // Detach Saint's tongue from terrain when teleporting
+            Tabs[0].AddItems(
+                new OpCheckBox(DetachOnTeleport, columnX, y)
+                { description = "Detach the player and held creatures' tongues from terrain when teleporting." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Detach Player on Teleport")
+            );
+            y -= itemHeight + spacing;
 
 
             _logOut.OnClick += btn =>

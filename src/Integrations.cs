@@ -339,6 +339,23 @@ namespace TwitchIntegration
                             Vector2 endPos = ply.bodyChunks[0].pos;
                             ply.graphicsModule?.Reset();
 
+                            // Remove tongue attachments
+                            if(Plugin.Config.DetachOnTeleport.Value)
+                            {
+                                if (ply.tongue != null && ply.tongue.Attached)
+                                    ply.tongue.Release();
+
+                                foreach (var grasp in ply.grasps)
+                                {
+                                    if(grasp?.grabbed is TubeWorm worm)
+                                    {
+                                        foreach (var tongue in worm.tongues)
+                                            if (tongue.Attached)
+                                                tongue.Release();
+                                    }
+                                }
+                            }
+
                             // Move all held objects
                             foreach (var grasp in ply.grasps)
                             {
@@ -610,17 +627,6 @@ namespace TwitchIntegration
         {
             if (!InGame) return RewardStatus.Cancel;
             Timer.FastForward("Randomize Stats");
-
-            void UpdateStats()
-            {
-                Game.session.characterStats = new SlugcatStats(Game.session.characterStats.name, Game.session.characterStats.malnourished);
-                foreach (var ply in Players)
-                {
-                    float mass = 0.7f * ply.slugcatStats.bodyWeightFac;
-                    ply.bodyChunks[0].mass = mass / 2f;
-                    ply.bodyChunks[1].mass = mass / 2f;
-                }
-            }
 
             // Choose new stats
             bool[] luck = new bool[4] { true, true, false, false };
@@ -942,17 +948,6 @@ namespace TwitchIntegration
             if (!InGame) return RewardStatus.Cancel;
             Timer.FastForward("Super Strength");
 
-            void UpdateStats()
-            {
-                Game.session.characterStats = new SlugcatStats(Game.session.characterStats.name, Game.session.characterStats.malnourished);
-                foreach (var ply in Players)
-                {
-                    float mass = 0.7f * ply.slugcatStats.bodyWeightFac;
-                    ply.bodyChunks[0].mass = mass / 2f;
-                    ply.bodyChunks[1].mass = mass / 2f;
-                }
-            }
-
             void ApplyWeight(On.SlugcatStats.orig_ctor orig, SlugcatStats self, SlugcatStats.Name slugcatNumber, bool malnourished)
             {
                 orig(self, slugcatNumber, malnourished);
@@ -1007,17 +1002,6 @@ namespace TwitchIntegration
         {
             if (!InGame) return RewardStatus.Cancel;
             Timer.FastForward("Super Weakness");
-
-            void UpdateStats()
-            {
-                Game.session.characterStats = new SlugcatStats(Game.session.characterStats.name, Game.session.characterStats.malnourished);
-                foreach (var ply in Players)
-                {
-                    float mass = 0.7f * ply.slugcatStats.bodyWeightFac;
-                    ply.bodyChunks[0].mass = mass / 2f;
-                    ply.bodyChunks[1].mass = mass / 2f;
-                }
-            }
 
             void ApplyWeight(On.SlugcatStats.orig_ctor orig, SlugcatStats self, SlugcatStats.Name slugcatNumber, bool malnourished)
             {
@@ -1629,6 +1613,27 @@ namespace TwitchIntegration
             if (room.abstractRoom.name == "SS_AI") return false;
             if (room.abstractRoom.exits <= 1) return false;
             return true;
+        }
+
+        private static void UpdateStats()
+        {
+            if (Game is not RainWorldGame game) return;
+
+            if (game?.session is ArenaGameSession arena)
+            {
+                var stats = arena.characterStats_Mplayer;
+                for (int i = 0; i < stats.Length; i++)
+                {
+                    if (stats[i] != null)
+                        stats[i] = new SlugcatStats(stats[i].name, stats[i].malnourished);
+                }
+            }
+
+            foreach (var ply in game.Players)
+            {
+                if (ply?.realizedObject is Player realPly)
+                    realPly.SetMalnourished(realPly.slugcatStats.malnourished);
+            }
         }
 
         private static readonly string[] adviceList = new string[]
