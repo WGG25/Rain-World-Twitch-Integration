@@ -47,6 +47,8 @@ namespace TwitchIntegration
             _loggerFactory = new();
 
             On.Menu.MainMenu.ctor += MainMenu_ctor;
+            NameLabel.AddHooks();
+
             On.RainWorld.OnModsInit += (orig, self) =>
             {
                 try

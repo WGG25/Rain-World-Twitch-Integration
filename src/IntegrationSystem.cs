@@ -147,6 +147,7 @@ namespace TwitchIntegration
 
             try
             {
+                Integrations.RedeemUserName = redemption.UserName;
                 var reward = redemption.Reward;
                 switch(reward.Handler())
                 {
@@ -179,6 +180,7 @@ namespace TwitchIntegration
                 Debug.LogException(e);
                 res = Fulfillment.Refund;
             }
+            Integrations.RedeemUserName = null;
 
             switch(res)
             {
