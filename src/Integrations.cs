@@ -6,10 +6,13 @@ using UnityEngine;
 using Random = UnityEngine.Random;
 using ObjectType = AbstractPhysicalObject.AbstractObjectType;
 using CritType = CreatureTemplate.Type;
+using MSCCritType = MoreSlugcats.MoreSlugcatsEnums.CreatureTemplateType;
+using MSCObjectType = MoreSlugcats.MoreSlugcatsEnums.AbstractObjectType;
 using System.IO;
 using MonoMod.RuntimeDetour;
 using System.Reflection;
 using Music;
+using MoreSlugcats;
 
 /*
  * Suggested ideas:
@@ -90,7 +93,27 @@ namespace TwitchIntegration
                 {
                     if (ply.room == null) continue;
 
-                    var absSpear = new AbstractSpear(ply.room.world, null, ply.coord, ply.room.game.GetNewID(), false);
+
+                    AbstractSpear absSpear;
+
+                    int rand = Random.Range(0, 20);
+                    if (rand == 0)
+                    {
+                        absSpear = new AbstractSpear(ply.room.world, null, ply.coord, ply.room.game.GetNewID(), true);
+                    }
+                    else if (rand == 1)
+                    {
+                        absSpear = new AbstractSpear(ply.room.world, null, ply.coord, ply.room.game.GetNewID(), false, true);
+                    }
+                    else if (rand == 2)
+                    {
+                        absSpear = new AbstractSpear(ply.room.world, null, ply.coord, ply.room.game.GetNewID(), false, Random.value);
+                    }
+                    else
+                    {
+                        absSpear = new AbstractSpear(ply.room.world, null, ply.coord, ply.room.game.GetNewID(), false);
+                    }
+
                     ply.room.abstractRoom.AddEntity(absSpear);
                     absSpear.RealizeInRoom();
                     var spear = (Spear)absSpear.realizedObject;
@@ -1042,7 +1065,8 @@ namespace TwitchIntegration
             if (nodes.Length == 0) return RewardStatus.Cancel;
 
             // Spawn the scav
-            var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(CritType.Scavenger), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
+            var type = Random.value < 0.2f && ModManager.MSC ? MSCCritType.ScavengerElite : CritType.Scavenger;
+            var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(type), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
             crit.Realize();
 
             // Move the scav into the pipe
@@ -1477,17 +1501,35 @@ namespace TwitchIntegration
             (world, pos, id) => new AbstractPhysicalObject(world, ObjectType.ScavengerBomb, null, pos, id),
             (world, pos, id) => new AbstractPhysicalObject(world, ObjectType.Lantern, null, pos, id),
         };
+        static readonly Func<World, WorldCoordinate, EntityID, AbstractPhysicalObject>[] mscItemFactories = new Func<World, WorldCoordinate, EntityID, AbstractPhysicalObject>[]
+        {
+            (world, pos, id) => new AbstractSpear(world, null, pos, id, false, true),
+            (world, pos, id) => new AbstractSpear(world, null, pos, id, false, Random.value),
+            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.GooieDuck, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.DandelionPeach, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.GlowWeed, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.Seed, null, pos, id, -1, -1, null),
+            (world, pos, id) => new LillyPuck.AbstractLillyPuck(world, null, pos, id, 3, -1, -1, null),
+            (world, pos, id) => new FireEgg.AbstractBugEgg(world, null, pos, id, Random.value),
+        };
         static AbstractPhysicalObject MakeRandomItem(World world, WorldCoordinate pos)
         {
-            if (Random.Range(0, 100) == 0)
+            int rand = Random.Range(0, 100);
+            if (rand == 0)
             {
                 var rock = new AbstractPhysicalObject(world, ObjectType.Rock, null, pos, world.game.GetNewID());
                 PensiveRock.Mark(rock);
                 return rock;
             }
+            else if (rand == 99 && ModManager.MSC)
+            {
+                var bomb = new AbstractPhysicalObject(world, MSCObjectType.SingularityBomb, null, pos, world.game.GetNewID());
+                return bomb;
+            }
             else
             {
-                var factory = itemFactories[Random.Range(0, itemFactories.Length)];
+                var factories = ModManager.MSC ? itemFactories.Concat(mscItemFactories) : itemFactories;
+                var factory = factories.ElementAt(Random.Range(0, factories.Count()));
                 return factory(world, pos, world.game.GetNewID());
             }
         }
@@ -1553,15 +1595,28 @@ namespace TwitchIntegration
             new Weighted<CritType>(1f, CritType.LanternMouse),
             new Weighted<CritType>(0.75f, CritType.DropBug),
             new Weighted<CritType>(1f, CritType.EggBug),
+
+            new Weighted<CritType>(1f, MSCCritType.AquaCenti),
+            new Weighted<CritType>(1f, MSCCritType.EelLizard),
+            new Weighted<CritType>(0.5f, MSCCritType.FireBug),
+            new Weighted<CritType>(0.25f, MSCCritType.Inspector),
+            new Weighted<CritType>(0.4f, MSCCritType.MirosVulture),
+            new Weighted<CritType>(1f, MSCCritType.MotherSpider),
+            new Weighted<CritType>(0.5f, MSCCritType.ScavengerElite),
+            new Weighted<CritType>(1f, MSCCritType.SpitLizard),
+            new Weighted<CritType>(0.25f, MSCCritType.TerrorLongLegs),
+            new Weighted<CritType>(0.25f, MSCCritType.TrainLizard),
+            new Weighted<CritType>(1f, MSCCritType.Yeek),
+            new Weighted<CritType>(1f, MSCCritType.ZoopLizard),
         };
         static CritType RandomCreatureType()
         {
-            return RandomWeighted(critTypes);
+            return RandomWeighted(critTypes.Where(type => type.value.Index != -1));
         }
 
         static CritType RandomLizardType()
         {
-            return RandomWeighted(critTypes.Where(type => StaticWorld.GetCreatureTemplate(type.value).TopAncestor().type == CritType.LizardTemplate));
+            return RandomWeighted(critTypes.Where(type => type.value.Index != -1 && StaticWorld.GetCreatureTemplate(type.value).TopAncestor().type == CritType.LizardTemplate));
         }
 
         static HSLColor Randomize(this HSLColor col, float dist)
