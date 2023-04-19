@@ -13,6 +13,8 @@ using MonoMod.RuntimeDetour;
 using System.Reflection;
 using Music;
 using MoreSlugcats;
+using Expedition;
+using System.Runtime.CompilerServices;
 
 /*
  * Suggested ideas:
@@ -870,7 +872,6 @@ namespace TwitchIntegration
             return RewardStatus.Done;
         }
 
-
         // Knockoff MoodMod
         [TwitchReward("Randomize Daylight")]
         public static RewardStatus RandomizeDaylight()
@@ -1116,6 +1117,98 @@ namespace TwitchIntegration
             room.AddEntity(crit);
 
             return RewardStatus.Done;
+        }
+
+        [TwitchReward("Lizard Cannon")]
+        public static RewardStatus LizardCannon()
+        {
+            if (!InGame) return RewardStatus.Cancel;
+
+            var ply = Players.FirstOrDefault();
+            if (ply == null || ply.room == null) return RewardStatus.TryLater;
+            var room = ply.room.abstractRoom;
+
+            if (!room.realizedRoom.CritsAllowed()) return RewardStatus.Cancel;
+
+            // Add hooks
+            if (!lizardCannonHooksAdded)
+            {
+                lizardCannonHooksAdded = true;
+
+                On.Lizard.SpitOutOfShortCut += (orig, self, pos, newRoom, spitOutAllSticks) =>
+                {
+                    orig(self, pos, newRoom, spitOutAllSticks);
+
+                    if (launchLizards.TryGetValue(self.abstractCreature, out var state)
+                        && !state.launched)
+                    {
+                        state.launched = true;
+                        state.dir = newRoom.ShorcutEntranceHoleDirection(pos).ToVector2();
+                        state.framesLeft = 10;
+                        Plugin.Logger.LogDebug(state.dir);
+                    }
+                };
+
+                On.Lizard.Update += (orig, self, eu) =>
+                {
+                    orig(self, eu);
+
+                    if (launchLizards.TryGetValue(self.abstractCreature, out var state)
+                        && state.launched)
+                    {
+                        if (state.framesLeft-- <= 0)
+                        {
+                            launchLizards.Remove(self.abstractCreature);
+                        }
+                        else
+                        {
+                            self.JawOpen = 1f;
+                            if(self.AI is LizardAI ai)
+                            {
+                                foreach (var player in Players)
+                                {
+                                    if (player.room == self.room)
+                                        ai.tracker.SeeCreature(player.abstractCreature);
+                                }
+                            }
+                            foreach (var chunk in self.bodyChunks)
+                            {
+                                chunk.vel += state.dir * state.framesLeft + Vector2.up;
+                            }
+                        }
+                    }
+                };
+            }
+
+            // Find a random room exit leading to the player's room
+            var nodes = room.nodes.Select((node, i) => new KeyValuePair<int, AbstractRoomNode>(i, node)).Where(node => node.Value.type == AbstractRoomNode.Type.Exit).ToArray();
+            if (nodes.Length == 0) return RewardStatus.Cancel;
+
+            // Spawn the lizard
+            var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(RandomLizardType()), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
+            NameLabel.AddNameLabel(crit, RedeemUserName);
+            crit.Realize();
+
+            // Move the lizard into the pipe
+            crit.realizedCreature.inShortcut = true;
+            room.world.game.shortcuts.CreatureEnterFromAbstractRoom(crit.realizedCreature, room, nodes[Random.Range(0, nodes.Length)].Key);
+            room.AddEntity(crit);
+
+            if (crit.realizedObject is Lizard liz)
+            {
+                launchLizards.Add(crit, new CannonBoostState());
+                liz.JawOpen = 1f;
+            }
+
+            return RewardStatus.Done;
+        }
+        static bool lizardCannonHooksAdded = false;
+        static readonly ConditionalWeakTable<AbstractCreature, CannonBoostState> launchLizards = new();
+        class CannonBoostState
+        {
+            public bool launched;
+            public Vector2 dir;
+            public int framesLeft;
         }
 
         // Displays a random loading screen tip taken from one of a handful of other games
@@ -1454,9 +1547,140 @@ namespace TwitchIntegration
             return RewardStatus.Done;
         }
 
+        [TwitchReward("Shorten Cycle")]
+        public static RewardStatus ShortenCycle()
+        {
+            if (!InGame || Game.world.rainCycle is not RainCycle rc) return RewardStatus.Cancel;
+
+            rc.timer += 40 * 60;
+            return RewardStatus.Done;
+        }
+
+        [TwitchReward("Lengthen Cycle")]
+        public static RewardStatus LengthenCycle()
+        {
+            if (!InGame || Game.world.rainCycle is not RainCycle rc) return RewardStatus.Cancel;
+
+            int target = rc.timer - 40 * 60;
+            rc.timer = Mathf.Max(target, 0);
+            rc.pause += rc.timer - target;
+
+            return RewardStatus.Done;
+        }
+
+        [TwitchReward("Grant High Agility")]
+        public static RewardStatus GrantHighAgility()
+        {
+            if (!InGame || !ModManager.Expedition || !ModManager.MSC) return RewardStatus.Cancel;
+
+            static void EnableExpStats(On.SlugcatStats.orig_ctor orig, SlugcatStats self, SlugcatStats.Name slugcat, bool malnourished)
+            {
+                int oldSave = RW.options.saveSlot;
+                RW.options.saveSlot = -oldSave - 1;
+                orig(self, slugcat, malnourished);
+                RW.options.saveSlot = oldSave;
+            }
+
+            Timer.FastForward("Agility");
+
+            var exp = EnableExpeditionUnlocks("unl-agility");
+            var isRiv = new Hook(
+                typeof(Player).GetProperty(nameof(Player.isRivulet)).GetGetMethod(),
+                (Func<Player, bool>)(self => true)
+            );
+            On.SlugcatStats.ctor += EnableExpStats;
+
+            UpdateStats();
+
+            Timer.Set(() =>
+            {
+                exp.Dispose();
+                isRiv.Dispose();
+                On.SlugcatStats.ctor -= EnableExpStats;
+                UpdateStats();
+            }, 30f, "Agility");
+
+            return RewardStatus.Done;
+        }
+
+        [TwitchReward("Grant Explosive Jump")]
+        public static RewardStatus GrantExplosiveJump()
+        {
+            if (!InGame || !ModManager.Expedition || !ModManager.MSC) return RewardStatus.Cancel;
+
+            Timer.FastForward("Explosive Jump");
+
+            var exp = EnableExpeditionUnlocks("unl-explosivejump");
+            var hasExpJump = new Hook(
+                typeof(ExpeditionGame).GetProperty(nameof(ExpeditionGame.explosivejump)).GetGetMethod(),
+                (Func<bool>)(() => true)
+            );
+            
+            Timer.Set(() =>
+            {
+                exp.Dispose();
+                hasExpJump.Dispose();
+            }, 30f, "Explosive Jump");
+
+            return RewardStatus.Done;
+        }
+
+        [TwitchReward("Spawn Slugpup")]
+        public static RewardStatus SpawnSlugpup()
+        {
+            if (!InGame || !ModManager.MSC) return RewardStatus.Cancel;
+
+            var ply = Players.FirstOrDefault();
+            if (ply == null || ply.room == null) return RewardStatus.TryLater;
+            var room = ply.room.abstractRoom;
+
+            if (!room.realizedRoom.CritsAllowed()) return RewardStatus.Cancel;
+
+            // Find a random room exit leading to the player's room
+            var nodes = room.nodes.Select((node, i) => new KeyValuePair<int, AbstractRoomNode>(i, node)).Where(node => node.Value.type == AbstractRoomNode.Type.Exit).ToArray();
+            if (nodes.Length == 0) return RewardStatus.Cancel;
+
+            // Spawn the pup
+            var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(MSCCritType.SlugNPC), null, new WorldCoordinate(ply.room.world.offScreenDen.index, -1, -1, 0), ply.room.game.GetNewID());
+            NameLabel.AddNameLabel(crit, RedeemUserName);
+            (crit.state as PlayerNPCState).foodInStomach = 1;
+            crit.Realize();
+
+            // Move the pup into the pipe
+            crit.realizedCreature.inShortcut = true;
+            room.world.game.shortcuts.CreatureEnterFromAbstractRoom(crit.realizedCreature, room, nodes[Random.Range(0, nodes.Length)].Key);
+            room.AddEntity(crit);
+
+            return RewardStatus.Done;
+        }
+
         // Helper methods can also go here
         // These won't do anything on their own unless you apply the TwitchReward attribute
         #region Helpers
+
+        class ToggledUnlocks : IDisposable
+        {
+            readonly string[] toRevoke;
+
+            public ToggledUnlocks(string[] toGrant)
+            {
+                toRevoke = toGrant
+                    .Where(unl => !ExpeditionGame.activeUnlocks.Contains(unl))
+                    .ToArray();
+
+                ExpeditionGame.activeUnlocks.AddRange(toRevoke);
+            }
+
+            public void Dispose()
+            {
+                ExpeditionGame.activeUnlocks.RemoveAll(toRevoke.Contains);
+            }
+        }
+
+        static ToggledUnlocks EnableExpeditionUnlocks(params string[] unlocks)
+        {
+            return new ToggledUnlocks(unlocks);
+        }
 
         static void PlaySpawnEffect(Room room, Vector2 pos, float rad = 100f)
         {

@@ -25,18 +25,22 @@ namespace TwitchIntegration
 
         readonly List<QueuedAction> queue = new List<QueuedAction>();
 
-        public static void Set(Action action, float delay, string name = null)
+        public static void Set(Action action, float delay, string name = null, bool exclusive = false)
         {
+            if (exclusive)
+                FastForward(name);
+
             if (action == null) return;
             Instance.QueueAction(action, delay, name);
         }
 
         public static void FastForward(string name)
         {
+            if (name == null) return;
+
             bool wasFF = FastForwarding;
             FastForwarding = true;
 
-            if (name == null) return;
             var queue = Instance.queue;
             int i;
             while ((i = queue.FindIndex(x => x.name == name)) != -1)
