@@ -21,7 +21,7 @@ using LogLevel = BepInEx.Logging.LogLevel;
 
 namespace TwitchIntegration
 {
-    [BepInPlugin("slime-cubed.twitchintegration", "Twitch Integration", "2.0.2")]
+    [BepInPlugin("slime-cubed.twitchintegration", "Twitch Integration", "2.1.1")]
     internal class Plugin : BaseUnityPlugin
     {
         public static new ManualLogSource Logger { get; private set; }

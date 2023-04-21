@@ -31,7 +31,7 @@ namespace TwitchIntegration
     {
         public static RainWorld RW => Custom.rainWorld;
         public static RainWorldGame Game => RW.processManager.currentMainLoop as RainWorldGame;
-        public static IEnumerable<Player> Players => Game.Players.Where(ply => ply.realizedObject is Player).Select(ply => (Player)ply.realizedObject);
+        public static IEnumerable<Player> Players => Game?.Players.Where(ply => ply.realizedObject is Player).Select(ply => (Player)ply.realizedObject) ?? Enumerable.Empty<Player>();
         public static bool InGame => Game != null;
         public static string RedeemUserName { get; set; }
 
@@ -1145,7 +1145,6 @@ namespace TwitchIntegration
                         state.launched = true;
                         state.dir = newRoom.ShorcutEntranceHoleDirection(pos).ToVector2();
                         state.framesLeft = 10;
-                        Plugin.Logger.LogDebug(state.dir);
                     }
                 };
 
