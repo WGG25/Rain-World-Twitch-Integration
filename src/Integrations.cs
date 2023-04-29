@@ -1597,6 +1597,8 @@ namespace TwitchIntegration
                 isRiv.Dispose();
                 On.SlugcatStats.ctor -= EnableExpStats;
                 UpdateStats();
+                if (!Timer.FastForwarding)
+                    ShowNotification("High Agility has worn off!");
             }, 30f, "Agility");
 
             return RewardStatus.Done;
@@ -1619,6 +1621,8 @@ namespace TwitchIntegration
             {
                 exp.Dispose();
                 hasExpJump.Dispose();
+                if (!Timer.FastForwarding)
+                    ShowNotification("Explosive Jump has worn off!");
             }, 30f, "Explosive Jump");
 
             return RewardStatus.Done;
@@ -1748,6 +1752,40 @@ namespace TwitchIntegration
             }
 
             return didSomething ? RewardStatus.Done : RewardStatus.TryLater;
+        }
+
+        [TwitchReward("Disable Gravity")]
+        public static RewardStatus DisableGravity()
+        {
+            if (!InGame) return RewardStatus.Cancel;
+
+            Timer.FastForward("Antigrav");
+
+            static void DefaultAntiGrav(On.Room.orig_ctor orig, Room self, RainWorldGame game, World world, AbstractRoom abstractRoom)
+            {
+                orig(self, game, world, abstractRoom);
+
+                self.gravity = 0f;
+            }
+
+            On.Room.ctor += DefaultAntiGrav;
+
+            foreach (var room in Game.world.activeRooms)
+            {
+                room.gravity = 0f;
+            }
+
+            Timer.Set(() =>
+            {
+                On.Room.ctor -= DefaultAntiGrav;
+                foreach (var room in Game.world.activeRooms)
+                {
+                    room.gravity = 1f;
+                }
+
+            }, 10f, "Antigrav");
+
+            return RewardStatus.Done;
         }
 
         // Helper methods can also go here
