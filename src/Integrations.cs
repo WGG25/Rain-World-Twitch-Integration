@@ -429,7 +429,7 @@ namespace TwitchIntegration
 
                 didSomething = true;
 
-                var objs = room.updateList.Where(obj => obj is Creature crit && crit.Template.type != CritType.Slugcat).ToArray();
+                var objs = room.updateList.Where(obj => obj is Creature crit && crit.Template.type != CritType.Slugcat && crit.Template.type != MSCCritType.SlugNPC).ToArray();
                 float volume = Mathf.Min(1f, 2f / objs.Length);
                 foreach (var obj in objs)
                 {
@@ -474,7 +474,7 @@ namespace TwitchIntegration
                 didSomething = true;
 
                 var objs = room.updateList
-                    .Where(obj => obj is Creature crit && crit.Template.type != CritType.Slugcat && !crit.grabbedBy.Any(g => g.grabber is Player)).ToArray();
+                    .Where(obj => obj is Creature crit && crit.Template.type != CritType.Slugcat && crit.Template.type != MSCCritType.SlugNPC && !crit.grabbedBy.Any(g => g.grabber is Player)).ToArray();
                 float volume = Mathf.Min(1f, 2f / objs.Length);
                 foreach (var obj in objs)
                 {
@@ -1653,6 +1653,103 @@ namespace TwitchIntegration
             return RewardStatus.Done;
         }
 
+        [TwitchReward("Switch Rooms")]
+        public static RewardStatus SwitchRooms()
+        {
+            if (!InGame) return RewardStatus.Cancel;
+
+            bool didSomething = false;
+            foreach (var ply in Players)
+            {
+                if (ply.room != null && ply.enteringShortCut == null)
+                {
+                    var shortcuts = ply.room.shortcuts.Where(sc => sc.shortCutType == ShortcutData.Type.RoomExit);
+                    int count = shortcuts.Count();
+
+                    if (count > 0)
+                    {
+                        didSomething = true;
+                        ply.AllGraspsLetGoOfThisObject(true);
+                        ply.enteringShortCut = shortcuts.ElementAt(Random.Range(0, count)).StartTile;
+                        if (ModManager.MSC && ply.tongue != null && ply.tongue.Attached)
+                        {
+                            ply.tongue.Release();
+                        }
+                        ply.SuperHardSetPosition(ply.room.MiddleOfTile(ply.enteringShortCut.Value));
+                    }
+                }
+            }
+
+            return didSomething ? RewardStatus.Done : RewardStatus.TryLater;
+        }
+
+        [TwitchReward("Wake Up Early")]
+        public static RewardStatus WakeUpEarly()
+        {
+            if (forcePrecycle || !ModManager.MSC) return RewardStatus.Cancel;
+
+            forcePrecycle = true;
+
+            if(!precycleHooksAdded)
+            {
+                precycleHooksAdded = true;
+
+                On.OverWorld.LoadFirstWorld += (orig, self) =>
+                {
+                    if (forcePrecycle)
+                    {
+                        bool wasForcePrecycle = self.game.rainWorld.setup.forcePrecycles;
+                        try
+                        {
+                            self.game.rainWorld.setup.forcePrecycles = true;
+                            orig(self);
+                        }
+                        finally
+                        {
+                            self.game.rainWorld.setup.forcePrecycles = wasForcePrecycle;
+                            forcePrecycle = false;
+                        }
+                    }
+                    else
+                    {
+                        orig(self);
+                    }
+                };
+            }
+
+            return RewardStatus.Done;
+        }
+        private static bool forcePrecycle;
+        private static bool precycleHooksAdded;
+
+        [TwitchReward("Alert Enemies")]
+        public static RewardStatus AlertEnemies()
+        {
+            if (!InGame) return RewardStatus.Cancel;
+
+            bool didSomething = false;
+
+            foreach(var room in Game.world.activeRooms)
+            {
+                foreach(var crit in room.abstractRoom.creatures)
+                {
+                    if(crit?.abstractAI?.RealAI is ArtificialIntelligence ai && ai.tracker != null)
+                    {
+                        foreach (var ply in Game.Players)
+                        {
+                            if (ply != null && ply.state.alive)
+                            {
+                                didSomething = true;
+                                ai.tracker.SeeCreature(ply);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return didSomething ? RewardStatus.Done : RewardStatus.TryLater;
+        }
+
         // Helper methods can also go here
         // These won't do anything on their own unless you apply the TwitchReward attribute
         #region Helpers
@@ -1825,18 +1922,18 @@ namespace TwitchIntegration
             new Weighted<CritType>(0.75f, CritType.DropBug),
             new Weighted<CritType>(1f, CritType.EggBug),
 
-            new Weighted<CritType>(1f, MSCCritType.AquaCenti),
-            new Weighted<CritType>(1f, MSCCritType.EelLizard),
-            new Weighted<CritType>(0.5f, MSCCritType.FireBug),
-            new Weighted<CritType>(0.25f, MSCCritType.Inspector),
-            new Weighted<CritType>(0.4f, MSCCritType.MirosVulture),
-            new Weighted<CritType>(1f, MSCCritType.MotherSpider),
-            new Weighted<CritType>(0.5f, MSCCritType.ScavengerElite),
-            new Weighted<CritType>(1f, MSCCritType.SpitLizard),
-            new Weighted<CritType>(0.25f, MSCCritType.TerrorLongLegs),
-            new Weighted<CritType>(0.25f, MSCCritType.TrainLizard),
-            new Weighted<CritType>(1f, MSCCritType.Yeek),
-            new Weighted<CritType>(1f, MSCCritType.ZoopLizard),
+            new Weighted<CritType>(1f, new (nameof(MSCCritType.AquaCenti))),
+            new Weighted<CritType>(1f, new (nameof(MSCCritType.EelLizard))),
+            new Weighted<CritType>(0.5f, new (nameof(MSCCritType.FireBug))),
+            new Weighted<CritType>(0.25f, new (nameof(MSCCritType.Inspector))),
+            new Weighted<CritType>(0.4f, new (nameof(MSCCritType.MirosVulture))),
+            new Weighted<CritType>(1f, new (nameof(MSCCritType.MotherSpider))),
+            new Weighted<CritType>(0.5f, new (nameof(MSCCritType.ScavengerElite))),
+            new Weighted<CritType>(1f, new (nameof(MSCCritType.SpitLizard))),
+            new Weighted<CritType>(0.25f, new (nameof(MSCCritType.TerrorLongLegs))),
+            new Weighted<CritType>(0.25f, new (nameof(MSCCritType.TrainLizard))),
+            new Weighted<CritType>(1f, new (nameof(MSCCritType.Yeek))),
+            new Weighted<CritType>(1f, new (nameof(MSCCritType.ZoopLizard))),
         };
         static CritType RandomCreatureType()
         {
@@ -1845,7 +1942,7 @@ namespace TwitchIntegration
 
         static CritType RandomLizardType()
         {
-            return RandomWeighted(critTypes.Where(type => type.value.Index != -1 && StaticWorld.GetCreatureTemplate(type.value).TopAncestor().type == CritType.LizardTemplate));
+            return RandomWeighted(critTypes.Where(type => type.value.Index != -1 && StaticWorld.GetCreatureTemplate(type.value)?.TopAncestor().type == CritType.LizardTemplate));
         }
 
         static HSLColor Randomize(this HSLColor col, float dist)
