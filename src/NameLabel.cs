@@ -117,6 +117,7 @@ namespace TwitchIntegration
             orig(self, obj);
 
             if(obj is Creature crit
+                && Plugin.Config.ShowNameTags.Value
                 && _names.TryGetValue(crit.abstractCreature, out var name))
             {
                 self.AddObject(new NameLabel(crit, name));

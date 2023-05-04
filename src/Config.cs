@@ -16,6 +16,7 @@ namespace TwitchIntegration
         public readonly Configurable<float> AfkTime;
         public readonly Configurable<bool> ClassicColors;
         public readonly Configurable<bool> DetachOnTeleport;
+        public readonly Configurable<bool> ShowNameTags;
         private readonly Plugin _plugin;
         private readonly Dictionary<string, Configurable<bool>> _autoFulfill = new();
 
@@ -42,6 +43,7 @@ namespace TwitchIntegration
             AfkTime = config.Bind("afk_time", 5f, new ConfigAcceptableRange<float>(-1f, float.PositiveInfinity));
             ClassicColors = config.Bind("classic_colors", true);
             DetachOnTeleport = config.Bind("detach_on_teleport", true);
+            ShowNameTags = config.Bind("show_name_tags", true);
 
             foreach(var pair in Integrations.Attributes)
             {
@@ -135,6 +137,14 @@ namespace TwitchIntegration
                 new OpCheckBox(DetachOnTeleport, columnX, y)
                 { description = "Detach the player and held creatures' tongues from terrain when teleporting." },
                 new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Detach Player on Teleport")
+            );
+            y -= itemHeight + spacing;
+
+            // Enable/Disable name tags on spawned creatures
+            Tabs[0].AddItems(
+                new OpCheckBox(ShowNameTags, columnX, y)
+                { description = "Show the name of the user who summoned a creature above it." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Show Name Tags")
             );
             y -= itemHeight + spacing;
 

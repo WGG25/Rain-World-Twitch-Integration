@@ -1242,7 +1242,12 @@ namespace TwitchIntegration
                     ply.ReleaseGrasp(0);
 
                 AbstractPhysicalObject explosive;
-                if (Random.value < 0.7f)
+
+                var rand = Random.value;
+
+                if(rand < 0.01f && ModManager.MSC)
+                    explosive = new AbstractPhysicalObject(ply.room.world, MSCObjectType.SingularityBomb, null, ply.coord, ply.room.game.GetNewID());
+                if (rand < 0.7f)
                     explosive = new AbstractPhysicalObject(ply.room.world, ObjectType.ScavengerBomb, null, ply.coord, ply.room.game.GetNewID());
                 else
                     explosive = new AbstractSpear(ply.room.world, null, ply.coord, ply.room.game.GetNewID(), true);
@@ -1665,7 +1670,8 @@ namespace TwitchIntegration
             bool didSomething = false;
             foreach (var ply in Players)
             {
-                if (ply.room != null && ply.enteringShortCut == null)
+                if (ply.room != null && ply.enteringShortCut == null
+                    && (ply.room.shelterDoor is not ShelterDoor door || !door.IsClosing))
                 {
                     var shortcuts = ply.room.shortcuts.Where(sc => sc.shortCutType == ShortcutData.Type.RoomExit);
                     int count = shortcuts.Count();
