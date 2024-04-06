@@ -547,9 +547,21 @@ namespace TwitchIntegration
                 return index >= 0 && index < colors.Length ? colors[index] : orig(index);
             }
 
+            Color GetJollyColor(On.PlayerGraphics.orig_JollyColor orig, int playerNumber, int index)
+            {
+                if (index >= 0 && index < colors.Length)
+                {
+                    return colors[index];
+                }
+                return orig(playerNumber, index);
+            }
+
+            Timer.FastForward("Randomize Colors");
+
             // Add a hook to change player colors
             On.PlayerGraphics.CustomColorsEnabled += EnableCustomColors;
             On.PlayerGraphics.CustomColorSafety += GetCustomColors;
+            On.PlayerGraphics.JollyColor += GetJollyColor;
             UpdatePlayerColors();
 
 
@@ -558,9 +570,10 @@ namespace TwitchIntegration
             {
                 On.PlayerGraphics.CustomColorsEnabled -= EnableCustomColors;
                 On.PlayerGraphics.CustomColorSafety -= GetCustomColors;
+                On.PlayerGraphics.JollyColor -= GetJollyColor;
                 if (InGame)
                     UpdatePlayerColors();
-            }, 60f);
+            }, 60f, "Randomize Colors");
 
             return RewardStatus.Done;
         }
@@ -588,9 +601,9 @@ namespace TwitchIntegration
         {
             if (!InGame) return RewardStatus.Cancel;
 
-            Player.InputPackage InvertInput(On.RWInput.orig_PlayerInput orig, int playerNumber, RainWorld rainWorld)
+            Player.InputPackage InvertInput(On.RWInput.orig_PlayerInput_int orig, int playerNumber)
             {
-                Player.InputPackage inputs = orig(playerNumber, rainWorld);
+                Player.InputPackage inputs = orig(playerNumber);
                 inputs.x *= -1;
                 inputs.y *= -1;
                 inputs.analogueDir.x *= -1f;
@@ -603,10 +616,10 @@ namespace TwitchIntegration
                 return inputs;
             }
 
-            On.RWInput.PlayerInput += InvertInput;
+            On.RWInput.PlayerInput_int += InvertInput;
 
             Timer.Set(() => {
-                On.RWInput.PlayerInput -= InvertInput;
+                On.RWInput.PlayerInput_int -= InvertInput;
                 ShowNotification("Invert Controls has worn off!");
             }, 15f);
 
@@ -1590,7 +1603,7 @@ namespace TwitchIntegration
             var exp = EnableExpeditionUnlocks("unl-agility");
             var isRiv = new Hook(
                 typeof(Player).GetProperty(nameof(Player.isRivulet)).GetGetMethod(),
-                (Func<Player, bool>)(self => true)
+                (Player self) => true
             );
             On.SlugcatStats.ctor += EnableExpStats;
 

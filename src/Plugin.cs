@@ -21,7 +21,7 @@ using LogLevel = BepInEx.Logging.LogLevel;
 
 namespace TwitchIntegration
 {
-    [BepInPlugin("slime-cubed.twitchintegration", "Twitch Integration", "2.1.2")]
+    [BepInPlugin("slime-cubed.twitchintegration", "Twitch Integration", "2.1.3")]
     internal class Plugin : BaseUnityPlugin
     {
         public static new ManualLogSource Logger { get; private set; }
@@ -60,6 +60,7 @@ namespace TwitchIntegration
 
                     MachineConnector.SetRegisteredOI("slime-cubed.twitchintegration", Config = new Config(this));
                     AddCommands();
+                    AddMiscHooks();
                 }
                 catch (Exception e)
                 {
@@ -209,6 +210,27 @@ namespace TwitchIntegration
                     return null;
                 })
                 .Register();
+        }
+
+        private void AddMiscHooks()
+        {
+            On.OverWorld.WorldLoaded += OverWorld_WorldLoaded;
+        }
+
+        // Prevent crash when switching regions carrying a swallowed DLL
+        private void OverWorld_WorldLoaded(On.OverWorld.orig_WorldLoaded orig, OverWorld self)
+        {
+            orig(self);
+
+            for (int m = 0; m < self.game.Players.Count; m++)
+            {
+                if (self.game.Players[m].realizedCreature is Player player
+                    && player.objectInStomach is AbstractCreature crit
+                    && crit.creatureTemplate.AI)
+                {
+                    crit.abstractAI.NewWorld(self.activeWorld);
+                }
+            }
         }
 
         private class BepLoggerFactory : ILoggerFactory

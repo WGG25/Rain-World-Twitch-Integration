@@ -18,9 +18,9 @@ namespace TwitchIntegration
     {
         // Do not be alarmed, this is not real data
         public readonly string Url = @"http://localhost:8080/mock";
-        public readonly string ClientID = "4636e4699774f00ec598c83bc48449";
-        public readonly string ClientSecret = "5ce6200434806f7deb403541c3d258";
-        public readonly string UserID = "77627326";
+        public readonly string ClientID = "651437fa2cb52ffe5b8f4f76f7353d";
+        public readonly string ClientSecret = "94d89394af9573a5f60d1dd3b1caf0";
+        public readonly string UserID = "40226423";
 
         public readonly IHttpCallHandler HttpCallHandler;
 
