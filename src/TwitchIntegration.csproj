@@ -20,6 +20,7 @@
 	<Target Name="CopyPlugins" AfterTargets="PostBuildEvent">
 		<ItemGroup>
 			<ModPlugin Include="$(TargetDir)/*.dll" />
+			<ModPlugin Include="$(TargetDir)/$(TargetName).pdb" />
 		</ItemGroup>
 		
 		<Copy SourceFiles="@(ModPlugin)" DestinationFolder="../mod/newest/plugins" />

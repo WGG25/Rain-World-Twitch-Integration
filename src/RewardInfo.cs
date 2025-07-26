@@ -105,7 +105,7 @@ namespace TwitchIntegration
                     });
             }
         }
-
+        
         public void UpdateOnlineInfo(CustomReward info)
         {
             _onlineInfo = info;
@@ -114,5 +114,5 @@ namespace TwitchIntegration
         }
     }
 
-    public delegate RewardStatus RedemptionHandler();
+    internal delegate RewardStatus RedemptionHandler();
 }

@@ -1,19 +1,13 @@
 ﻿using System.Linq;
 using BepInEx;
 using Menu;
-using System.Collections.Generic;
 using UnityEngine;
-using TwitchLib.Api.Core.Enums;
 using DevConsole;
 using DevConsole.Commands;
 using System;
 using Random = UnityEngine.Random;
 using System.Security.Permissions;
 using BepInEx.Logging;
-using Microsoft.Extensions.Logging;
-using ILogger = Microsoft.Extensions.Logging.ILogger;
-using MSLogLevel = Microsoft.Extensions.Logging.LogLevel;
-using LogLevel = BepInEx.Logging.LogLevel;
 
 #pragma warning disable CS0618
 [assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
@@ -26,25 +20,15 @@ namespace TwitchIntegration
     {
         public static new ManualLogSource Logger { get; private set; }
         public static new Config Config { get; private set; }
-        private static BepLoggerFactory _loggerFactory;
 
         public IntegrationSystem System;
 
         private LoginPrompt _login;
-        private FLabel _loginErrorLabel;
         private bool _init;
-
-        private static readonly string _clientID = "wtm2ouib4loubtj0tu2l6t69erfsgd";
-        private static readonly List<AuthScopes> _authScopes = new()
-        {
-            AuthScopes.Helix_Channel_Read_Redemptions,
-            AuthScopes.Helix_Channel_Manage_Redemptions
-        };
 
         public void Awake()
         {
             Logger = base.Logger;
-            _loggerFactory = new();
 
             On.Menu.MainMenu.ctor += MainMenu_ctor;
             NameLabel.AddHooks();
@@ -69,87 +53,62 @@ namespace TwitchIntegration
             };
         }
 
+        private const string enableTwitchText = "ENABLE TWITCH";
+        private const string disableTwitchText = "DISABLE TWITCH";
         private void MainMenu_ctor(On.Menu.MainMenu.orig_ctor orig, MainMenu self, ProcessManager manager, bool showRegionSpecificBkg)
         {
             orig(self, manager, showRegionSpecificBkg);
 
             CacheData.Reload();
 
-            const string enableText = "ENABLE TWITCH";
-            const string disableText = "DISABLE TWITCH";
-
             float buttonWidth = MainMenu.GetButtonWidth(self.CurrLang);
             var pos = new Vector2(683f - buttonWidth / 2f, 0f);
             var size = new Vector2(buttonWidth, 30f);
 
-            var button = new SimpleButton(self, self.pages[0], (_login == null && System == null) ? enableText : disableText, "TOGGLE_TWITCH", pos, size);
-            self.AddMainMenuButton(button, () =>
+            var button = new SimpleButton(self, self.pages[0], (_login == null && System == null) ? enableTwitchText : disableTwitchText, "TOGGLE_TWITCH", pos, size);
+            self.AddMainMenuButton(button, () => Connect(button), 1);
+        }
+
+        private void Connect(SimpleButton button)
+        {
+            if (System != null)
             {
-                if (_login != null || System != null)
+                System?.Dispose();
+                System = null;
+
+                button.menuLabel.text = enableTwitchText;
+            }
+            else
+            {
+                bool mock = Input.GetKey(KeyCode.M);
+                _login = new LoginPrompt(button.menu.manager, mock);
+                button.menu.manager.ShowDialog(_login);
+                button.menuLabel.text = disableTwitchText;
+
+                _login.Success += system =>
                 {
-                    System?.Dispose();
-                    System = null;
-                    _login?.Dispose();
+                    Logger.LogDebug($"Successfully logged into Twitch! Mock: {mock}");
+                    System = system;
                     _login = null;
-
-                    button.menuLabel.text = enableText;
-                }
-                else
-                {
-                    MockData mockApi = null;
-                    if(Input.GetKey(KeyCode.M))
+                    if (Config.StayLoggedIn.Value && !mock)
                     {
-                        mockApi = new MockData(_loggerFactory.CreateLogger<MockHttpClient>());
+                        CacheData.OAuthToken = System.Api.Settings.AccessToken;
+                        CacheData.Save();
                     }
+                };
 
-                    _login = new LoginPrompt(_clientID, _authScopes, mockApi, _loggerFactory, CacheData.OAuthToken);
-                    button.menuLabel.text = disableText;
-                }
-            }, 1);
+                _login.Failure += () =>
+                {
+                    Logger.LogDebug("Failed to log into Twitch!");
+                    button.menuLabel.text = enableTwitchText;
+                    _login = null;
+                };
+            }
         }
 
         public void Update()
         {
-            if (_login != null && _login.Done)
-            {
-                var login = _login;
-                _login = null;
-
-                System = new IntegrationSystem(login.Result.Value, login.Result.Key, login.MockApi);
-
-                if (Config.StayLoggedIn.Value)
-                {
-                    CacheData.OAuthToken = login.Result.Value.Settings.AccessToken;
-                    CacheData.Save();
-                }
-            }
-
             System?.Update();
-
-            if(System != null
-                && System.ChannelPointsAvailable == false
-                && RWCustom.Custom.rainWorld.processManager.currentMainLoop is MainMenu menu)
-            {
-                if (_loginErrorLabel == null)
-                {
-                    _loginErrorLabel = new FLabel(RWCustom.Custom.GetFont(), "Channel points not available!\nBroadcaster must be a Twitch affiliate.");
-
-                    var btn = menu.mainMenuButtons.First(x => x.signalText == "TOGGLE_TWITCH");
-                    _loginErrorLabel.alignment = FLabelAlignment.Left;
-                    _loginErrorLabel.SetPosition(btn.pos.x + 150.1f, btn.pos.y + 15.1f);
-                    _loginErrorLabel.color = new Color(1f, 0.15f, 0.15f);
-
-                    menu.container.AddChild(_loginErrorLabel);
-                }
-            }
-            else
-            {
-                if(_loginErrorLabel != null)
-                {
-                    _loginErrorLabel.RemoveFromContainer();
-                    _loginErrorLabel = null;
-                }
-            }
         }
 
         private void AddCommands()
@@ -181,7 +140,14 @@ namespace TwitchIntegration
                                 break;
                             }
                             GameConsole.WriteLine($"Redeeming \"{rewardName}\"...");
-                            System?.Redeem(new IntegrationSystem.PendingRedemption(System.Rewards[rewardName], "Test User"));
+                            if (MockApi.Instance != null)
+                            {
+                                MockApi.Instance.TriggerRedeem(System.Rewards[rewardName]);
+                            }
+                            else
+                            {
+                                System?.Redeem(new IntegrationSystem.PendingRedemption(System.Rewards[rewardName], "Test User"));
+                            }
                             break;
 
                         case "skip_timers":
@@ -214,13 +180,13 @@ namespace TwitchIntegration
 
         private void AddMiscHooks()
         {
-            On.OverWorld.WorldLoaded += OverWorld_WorldLoaded;
+            On.OverWorld.WorldLoaded += OverWorld_WorldLoaded1;
         }
 
         // Prevent crash when switching regions carrying a swallowed DLL
-        private void OverWorld_WorldLoaded(On.OverWorld.orig_WorldLoaded orig, OverWorld self)
+        private void OverWorld_WorldLoaded1(On.OverWorld.orig_WorldLoaded orig, OverWorld self, bool warpUsed)
         {
-            orig(self);
+            orig(self, warpUsed);
 
             for (int m = 0; m < self.game.Players.Count; m++)
             {
@@ -230,60 +196,6 @@ namespace TwitchIntegration
                 {
                     crit.abstractAI.NewWorld(self.activeWorld);
                 }
-            }
-        }
-
-        private class BepLoggerFactory : ILoggerFactory
-        {
-            public BepLoggerFactory()
-            {
-            }
-
-            public void AddProvider(ILoggerProvider provider)
-            {
-            }
-
-            public ILogger CreateLogger(string categoryName)
-            {
-                return new BepLoggerWrapper(categoryName);
-            }
-
-            public void Dispose()
-            {
-            }
-        }
-
-        private class BepLoggerWrapper : ILogger
-        {
-            private readonly string _name;
-
-            public BepLoggerWrapper(string name)
-            {
-                _name = name;
-            }
-
-            public IDisposable BeginScope<TState>(TState state) => null;
-
-            public bool IsEnabled(MSLogLevel logLevel)
-            {
-                return logLevel != MSLogLevel.Trace
-                    && logLevel != MSLogLevel.Debug
-                    && logLevel != MSLogLevel.Information;
-            }
-
-            public void Log<TState>(MSLogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-            {
-                LogLevel level = logLevel switch
-                {
-                    MSLogLevel.Trace or MSLogLevel.Debug or MSLogLevel.Information => LogLevel.None,
-                    MSLogLevel.Warning => LogLevel.Warning,
-                    MSLogLevel.Error or MSLogLevel.Critical => LogLevel.Error,
-                    _ => LogLevel.None
-                };
-
-                if (level == LogLevel.None) return;
-                
-                Logger.Log(level, _name + ": " + formatter(state, exception));
             }
         }
     }

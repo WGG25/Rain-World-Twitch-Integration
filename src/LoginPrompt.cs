@@ -10,119 +10,230 @@ using UnityEngine;
 using TwitchLib.Api.Core.Enums;
 using System.Linq;
 using TwitchLib.Api.Core.Interfaces;
-using System.ComponentModel.DataAnnotations;
 using System.Net.Http;
-using Newtonsoft.Json;
 using TwitchLib.Api.Core.Common;
 using Microsoft.Extensions.Logging;
+using Menu;
+using Microsoft.Extensions.DependencyInjection;
+using TwitchLib.Api.Core;
+using TwitchLib.Communication.Clients;
+using TwitchLib.EventSub.Websockets.Extensions;
+using TwitchLib.EventSub.Websockets;
+using System.Text.Json;
 
 namespace TwitchIntegration
 {
-    internal class LoginPrompt : IDisposable
+    internal class LoginPrompt : Dialog, IDisposable
     {
-        private static readonly string _redirectUri = "http://localhost:37506/";
+        private static readonly string redirectUri = "http://localhost:37506/";
+        private readonly CancellationTokenSource cts;
+        private HttpListener server;
+        private Task<IntegrationSystem> loginTask;
 
-        public bool Done => _loginTask is Task<KeyValuePair<string, TwitchAPI>> login && login.IsCompleted;
-        public KeyValuePair<string, TwitchAPI> Result
+        private SimpleButton closeButton;
+
+        // API settings and other data
+        private const string defaultClientID = "wtm2ouib4loubtj0tu2l6t69erfsgd";
+        private const string mockClientID = "651437fa2cb52ffe5b8f4f76f7353d";
+        private const string mockClientSecret = "94d89394af9573a5f60d1dd3b1caf0";
+        private const string mockUserID = "20425321";
+        private static readonly List<AuthScopes> authScopes = new()
         {
-            get
+            AuthScopes.Helix_Channel_Read_Redemptions,
+            AuthScopes.Helix_Channel_Manage_Redemptions,
+        };
+
+        public event Action<IntegrationSystem> Success;
+        public event Action Failure;
+
+        public LoginPrompt(ProcessManager manager, bool mock)
+            : base("", new Vector2(478.1f, 115.200005f), manager)
+        {
+            cts = new CancellationTokenSource();
+
+            closeButton = new SimpleButton(this, pages[0], "CANCEL", "CLOSE", pos + new Vector2((size.x - 110f) / 2f, 7f), new Vector2(110f, 30f));
+            pages[0].subObjects.Add(closeButton);
+
+            if (mock)
+                loginTask = LoginMock(cts.Token);
+            else
+                loginTask = Login(cts.Token);
+        }
+
+        public override void Update()
+        {
+            base.Update();
+
+            closeButton.menuLabel.text = loginTask == null ? "CLOSE" : "CANCEL";
+
+            if (loginTask != null && loginTask.IsCompleted)
             {
-                if(_loginTask is Task<KeyValuePair<string, TwitchAPI>> login && login.IsCompleted)
-                {
-                    return login.Result;
-                }
+                if (loginTask.IsFaulted)
+                    descriptionLabelLong.text = loginTask.Exception.ToString();
                 else
-                {
-                    return default;
-                }
+                    Close();
+                loginTask = null;
             }
         }
 
-        public readonly MockData MockApi;
-        public string Token { get; set; }
-
-        private readonly Task<KeyValuePair<string, TwitchAPI>> _loginTask;
-        private readonly CancellationTokenSource _tokenSource;
-        private HttpListener _server;
-
-        public LoginPrompt(string clientID, IEnumerable<AuthScopes> scopes, MockData mockApi = null, ILoggerFactory logger = null, string cachedToken = null)
+        public override void Singal(MenuObject sender, string message)
         {
-            _tokenSource = new CancellationTokenSource();
-            MockApi = mockApi;
-            _loginTask = Login(clientID, scopes.ToList(), _tokenSource.Token, logger, cachedToken);
+            if (message == "CLOSE")
+                Close();
         }
 
-        async Task<KeyValuePair<string, TwitchAPI>> Login(string clientID, List<AuthScopes> scopes, CancellationToken ct, ILoggerFactory logger, string cachedToken = null)
+        private void Close()
         {
-            // Authorize
-            TwitchAPI api;
+            if (loginTask != null && loginTask.IsCompleted && !loginTask.IsFaulted && loginTask.Result != null)
+                Success?.Invoke(loginTask.Result);
+            else
+                Failure?.Invoke();
 
-            if (MockApi == null)
+            manager.StopSideProcess(this);
+            Dispose();
+        }
+
+        private void SetLoadingText(string text)
+        {
+            Plugin.Logger.LogDebug("Login status: " + text);
+            descriptionLabel.text = text;
+        }
+
+        private IServiceCollection GetDefaultServices()
+        {
+            return new DefaultServiceProviderFactory()
+                .CreateBuilder(new ServiceCollection())
+                .AddLogging(logger =>
+                {
+                    logger
+                        .SetMinimumLevel(LogLevel.Debug)
+                        .AddProvider(new BepInExLoggerProvider());
+                })
+                .AddSingleton<IApiSettings>(new ApiSettings()
+                {
+                    Scopes = authScopes
+                })
+                .AddSingleton<WebSocketClient>()
+                .AddSingleton<TwitchAPI>()
+                .AddTwitchLibEventSubWebsockets();
+        }
+
+        private async Task<IntegrationSystem> LoginMock(CancellationToken ct)
+        {
+            try
             {
-                ValidateAccessTokenResponse validation = null;
+                MockApi.Start();
+            }
+            catch (Exception e)
+            {
+                Plugin.Logger.LogError(e);
+            }
 
-                // Use real data
-                api = new TwitchAPI(logger);
-                api.Settings.ClientId = clientID;
-                api.Settings.Scopes = scopes;
+            var services = GetDefaultServices()
+                .AddSingleton<IHttpCallHandler, MockHttpClientHandler>()
+                .BuildServiceProvider();
 
-                // Try cached token
-                if (cachedToken != null)
-                {
-                    api.Settings.AccessToken = cachedToken;
-                    validation = await api.Auth.ValidateAccessTokenAsync();
-                }
+            var twitch = services.GetRequiredService<TwitchAPI>();
+            var eventSub = services.GetRequiredService<EventSubWebsocketClient>();
+            twitch.Settings.ClientId = mockClientID;
+            twitch.Settings.Secret = mockClientSecret;
 
-                ct.ThrowIfCancellationRequested();
+            SetLoadingText("Logging into mock API...");
+            twitch.Settings.AccessToken = await GetMockAccessToken();
+            ct.ThrowIfCancellationRequested();
 
-                // If cached token fails, request a new one
-                if (validation == null)
-                {
-                    api.Settings.AccessToken = await GetOAuthToken(api, ct);
-                    validation = await api.Auth.ValidateAccessTokenAsync();
-                }
+            SetLoadingText("Connecting to Twitch events...");
+            var system = new IntegrationSystem(twitch, eventSub, mockUserID);
 
-                if (validation == null)
-                    throw new InvalidOperationException("Failed to validate token!");
-
-                Plugin.Logger.LogDebug($"Logged in! UserId={validation.UserId}, Login={validation.Login}");
-
-                return new(validation.UserId, api);
+            if (await system.Connect(new Uri("ws://127.0.0.1:8081/ws")))
+            {
+                SetLoadingText("Connected!");
+                return system;
             }
             else
             {
-                // Use mock API
-                api = new TwitchAPI(logger, http: MockApi.HttpCallHandler);
-                api.Settings.ClientId = MockApi.ClientID;
-                api.Settings.Scopes = scopes;
+                SetLoadingText("Failed to connect!");
+                return null;
+            }
+        }
 
-                var client = new HttpClient();
+        private async Task<string> GetMockAccessToken()
+        {
+            using var client = new HttpClient();
 
-                var uri = new UriBuilder("http", "localhost", 8080, "auth/authorize");
-                uri.Query = "client_id=" + MockApi.ClientID
-                    + "&client_secret=" + MockApi.ClientSecret
-                    + "&grant_type=user_token"
-                    + "&grant_type=user_token"
-                    + "&user_id=" + MockApi.UserID
-                    + "&scope=" + string.Join("%20", scopes.Select(Helpers.AuthScopesToString));
+            var uri = new UriBuilder("http", "localhost", 8080, "auth/authorize");
+            uri.Query = "client_id=" + mockClientID
+                + "&client_secret=" + mockClientSecret
+                + "&grant_type=user_token"
+                + "&user_id=" + mockUserID
+                + "&scope=" + string.Join("%20", authScopes.Select(Helpers.AuthScopesToString));
 
-                var res = await client.PostAsync(uri.Uri, new StringContent(""));
-                api.Settings.AccessToken = (string)(await res.Content.ReadAsStringAsync()).dictionaryFromJson()["access_token"];
+            var res = await client.PostAsync(uri.Uri, null);
+            var stream = await res.Content.ReadAsStreamAsync();
+            var json = await JsonDocument.ParseAsync(stream);
+            return json.RootElement.GetProperty("access_token").GetString();
+        }
 
-                var user = await api.Helix.Users.GetUsersAsync();
+        private async Task<IntegrationSystem> Login(CancellationToken ct)
+        {
+            var services = GetDefaultServices().BuildServiceProvider();
+            var api = services.GetRequiredService<TwitchAPI>();
+            var eventSub = services.GetRequiredService<EventSubWebsocketClient>();
+            api.Settings.ClientId = defaultClientID;
 
-                return new(user.Users[0].Id, api);
+            ValidateAccessTokenResponse validation = null;
+
+            // Try cached token
+            if (CacheData.OAuthToken != null)
+            {
+                api.Settings.AccessToken = CacheData.OAuthToken;
+                SetLoadingText("Trying saved login info...");
+                validation = await api.Auth.ValidateAccessTokenAsync();
+                ct.ThrowIfCancellationRequested();
+            }
+
+            // If cached token fails, request a new one
+            if (validation == null)
+            {
+                SetLoadingText("Log into Twitch with your web browser to continue.");
+                api.Settings.AccessToken = await GetOAuthToken(api, ct);
+                ct.ThrowIfCancellationRequested();
+                SetLoadingText("Validating login info...");
+                validation = await api.Auth.ValidateAccessTokenAsync();
+                ct.ThrowIfCancellationRequested();
+            }
+
+            if (validation == null)
+            {
+                SetLoadingText("Failed to log in!");
+                return null;
+            }
+
+            Plugin.Logger.LogDebug($"Logged in! UserId={validation.UserId}, Login={validation.Login}");
+
+            SetLoadingText("Connecting to Twitch events...");
+            var system = new IntegrationSystem(api, eventSub, validation.UserId);
+
+            if (await system.Connect(null))
+            {
+                SetLoadingText("Connected!");
+                return system;
+            }
+            else
+            {
+                SetLoadingText("Failed to connect!");
+                return null;
             }
         }
 
         private async Task<string> GetOAuthToken(TwitchAPI api, CancellationToken ct)
         {
-            var url = api.Auth.GetAuthorizationCodeUrl(_redirectUri, api.Settings.Scopes, clientId: api.Settings.ClientId).Replace("response_type=code", "response_type=token");
+            var url = api.Auth.GetAuthorizationCodeUrl(redirectUri, api.Settings.Scopes).Replace("response_type=code", "response_type=token");
 
             // Set up a server to receive the result
             var server = new HttpListener();
-            server.Prefixes.Add(_redirectUri);
-            _server = server;
+            server.Prefixes.Add(redirectUri);
+            this.server = server;
             try
             {
                 server.Start();
@@ -157,10 +268,10 @@ namespace TwitchIntegration
                         client.Response.ContentType = "text/plain";
                         int status;
                         string text;
-                        if(accessToken != null)
+                        if (accessToken != null)
                         {
                             var validation = await api.Auth.ValidateAccessTokenAsync(accessToken);
-                            if(validation == null)
+                            if (validation == null)
                             {
                                 status = 400;
                                 text = "Error: Couldn't validate login token!";
@@ -218,7 +329,9 @@ namespace TwitchIntegration
 
         public void Dispose()
         {
-            _server?.Close();
+            server?.Close();
+            cts.Cancel();
+            cts.Dispose();
         }
     }
 }

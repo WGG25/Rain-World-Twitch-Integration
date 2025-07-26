@@ -6,8 +6,10 @@ using UnityEngine;
 using Random = UnityEngine.Random;
 using ObjectType = AbstractPhysicalObject.AbstractObjectType;
 using CritType = CreatureTemplate.Type;
-using MSCCritType = MoreSlugcats.MoreSlugcatsEnums.CreatureTemplateType;
 using MSCObjectType = MoreSlugcats.MoreSlugcatsEnums.AbstractObjectType;
+using MSCCritType = MoreSlugcats.MoreSlugcatsEnums.CreatureTemplateType;
+using DLCObjectType = DLCSharedEnums.AbstractObjectType;
+using DLCCritType = DLCSharedEnums.CreatureTemplateType;
 using System.IO;
 using MonoMod.RuntimeDetour;
 using System.Reflection;
@@ -1083,7 +1085,7 @@ namespace TwitchIntegration
             if (nodes.Length == 0) return RewardStatus.Cancel;
 
             // Spawn the scav
-            var type = Random.value < 0.2f && ModManager.MSC ? MSCCritType.ScavengerElite : CritType.Scavenger;
+            var type = Random.value < 0.2f && ModManager.MSC ? DLCCritType.ScavengerElite : CritType.Scavenger;
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(type), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
             NameLabel.AddNameLabel(crit, RedeemUserName);
             crit.Realize();
@@ -1233,7 +1235,10 @@ namespace TwitchIntegration
             {
                 if(cam?.hud?.textPrompt is HUD.TextPrompt tp)
                 {
-                    tp.AddMessage(GetAdvice(), 10, 160, true, false);
+                    string advice = GetAdvice();
+                    if (advice == null)
+                        return RewardStatus.Cancel;
+                    tp.AddMessage(advice, 10, 160, true, false);
                 }
             }
 
@@ -1259,7 +1264,7 @@ namespace TwitchIntegration
                 var rand = Random.value;
 
                 if(rand < 0.01f && ModManager.MSC)
-                    explosive = new AbstractPhysicalObject(ply.room.world, MSCObjectType.SingularityBomb, null, ply.coord, ply.room.game.GetNewID());
+                    explosive = new AbstractPhysicalObject(ply.room.world, DLCObjectType.SingularityBomb, null, ply.coord, ply.room.game.GetNewID());
                 if (rand < 0.7f)
                     explosive = new AbstractPhysicalObject(ply.room.world, ObjectType.ScavengerBomb, null, ply.coord, ply.room.game.GetNewID());
                 else
@@ -1780,9 +1785,9 @@ namespace TwitchIntegration
 
             Timer.FastForward("Antigrav");
 
-            static void DefaultAntiGrav(On.Room.orig_ctor orig, Room self, RainWorldGame game, World world, AbstractRoom abstractRoom)
+            static void DefaultAntiGrav(On.Room.orig_ctor orig, Room self, RainWorldGame game, World world, AbstractRoom abstractRoom, bool devUI)
             {
-                orig(self, game, world, abstractRoom);
+                orig(self, game, world, abstractRoom, devUI);
 
                 self.gravity = 0f;
             }
@@ -1871,7 +1876,7 @@ namespace TwitchIntegration
             (world, pos, id) => new WaterNut.AbstractWaterNut(world, null, pos, id, -1, -1, null, false),
             (world, pos, id) => new SporePlant.AbstractSporePlant(world, null, pos, id, -1, -1, null, false, true),
             (world, pos, id) => new AbstractConsumable(world, ObjectType.KarmaFlower, null, pos, id, -1, -1, null),
-            (world, pos, id) => new AbstractConsumable(world, ObjectType.DangleFruit, null, pos, id, -1, -1, null),
+            (world, pos, id) => new DangleFruit.AbstractDangleFruit(world, null, pos, id, -1, -1, false, null),
             (world, pos, id) => new AbstractConsumable(world, ObjectType.FlyLure, null, pos, id, -1, -1, null),
             (world, pos, id) => new AbstractConsumable(world, ObjectType.Mushroom, null, pos, id, -1, -1, null),
             (world, pos, id) => new AbstractConsumable(world, ObjectType.SlimeMold, null, pos, id, -1, -1, null),
@@ -1888,16 +1893,16 @@ namespace TwitchIntegration
         {
             (world, pos, id) => new AbstractSpear(world, null, pos, id, false, true),
             (world, pos, id) => new AbstractSpear(world, null, pos, id, false, Random.value),
-            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.GooieDuck, null, pos, id, -1, -1, null),
-            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.DandelionPeach, null, pos, id, -1, -1, null),
-            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.GlowWeed, null, pos, id, -1, -1, null),
-            (world, pos, id) => new AbstractConsumable(world, MSCObjectType.Seed, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, DLCObjectType.GooieDuck, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, DLCObjectType.DandelionPeach, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, DLCObjectType.GlowWeed, null, pos, id, -1, -1, null),
+            (world, pos, id) => new AbstractConsumable(world, DLCObjectType.Seed, null, pos, id, -1, -1, null),
             (world, pos, id) => new LillyPuck.AbstractLillyPuck(world, null, pos, id, 3, -1, -1, null),
             (world, pos, id) => new FireEgg.AbstractBugEgg(world, null, pos, id, Random.value),
         };
         static AbstractPhysicalObject MakeRandomItem(World world, WorldCoordinate pos)
         {
-            int rand = Random.Range(0, 100);
+            int rand = Random.Range(0, 40);
             if (rand == 0)
             {
                 var rock = new AbstractPhysicalObject(world, ObjectType.Rock, null, pos, world.game.GetNewID());
@@ -1906,7 +1911,7 @@ namespace TwitchIntegration
             }
             else if (rand == 99 && ModManager.MSC)
             {
-                var bomb = new AbstractPhysicalObject(world, MSCObjectType.SingularityBomb, null, pos, world.game.GetNewID());
+                var bomb = new AbstractPhysicalObject(world, DLCObjectType.SingularityBomb, null, pos, world.game.GetNewID());
                 return bomb;
             }
             else
@@ -1979,18 +1984,18 @@ namespace TwitchIntegration
             new Weighted<CritType>(0.75f, CritType.DropBug),
             new Weighted<CritType>(1f, CritType.EggBug),
 
-            new Weighted<CritType>(1f, new (nameof(MSCCritType.AquaCenti))),
-            new Weighted<CritType>(1f, new (nameof(MSCCritType.EelLizard))),
+            new Weighted<CritType>(1f, new (nameof(DLCCritType.AquaCenti))),
+            new Weighted<CritType>(1f, new (nameof(DLCCritType.EelLizard))),
             new Weighted<CritType>(0.5f, new (nameof(MSCCritType.FireBug))),
-            new Weighted<CritType>(0.25f, new (nameof(MSCCritType.Inspector))),
-            new Weighted<CritType>(0.4f, new (nameof(MSCCritType.MirosVulture))),
-            new Weighted<CritType>(1f, new (nameof(MSCCritType.MotherSpider))),
-            new Weighted<CritType>(0.5f, new (nameof(MSCCritType.ScavengerElite))),
-            new Weighted<CritType>(1f, new (nameof(MSCCritType.SpitLizard))),
-            new Weighted<CritType>(0.25f, new (nameof(MSCCritType.TerrorLongLegs))),
+            new Weighted<CritType>(0.25f, new (nameof(DLCCritType.Inspector))),
+            new Weighted<CritType>(0.4f, new (nameof(DLCCritType.MirosVulture))),
+            new Weighted<CritType>(1f, new (nameof(DLCCritType.MotherSpider))),
+            new Weighted<CritType>(0.5f, new (nameof(DLCCritType.ScavengerElite))),
+            new Weighted<CritType>(1f, new (nameof(DLCCritType.SpitLizard))),
+            new Weighted<CritType>(0.25f, new (nameof(DLCCritType.TerrorLongLegs))),
             new Weighted<CritType>(0.25f, new (nameof(MSCCritType.TrainLizard))),
-            new Weighted<CritType>(1f, new (nameof(MSCCritType.Yeek))),
-            new Weighted<CritType>(1f, new (nameof(MSCCritType.ZoopLizard))),
+            new Weighted<CritType>(1f, new (nameof(DLCCritType.Yeek))),
+            new Weighted<CritType>(1f, new (nameof(DLCCritType.ZoopLizard))),
         };
         static CritType RandomCreatureType()
         {
@@ -2074,228 +2079,24 @@ namespace TwitchIntegration
             }
         }
 
-        private static readonly string[] adviceList = new string[]
-        {
-            "Remember to use flasks (1-5 on the keyboard).",
-            "You can remove a Skill Gem from an item by right clicking on it.",
-            "Put a # before your chat message to talk globally.",
-            "Instances reset after being empty for 15 minutes.",
-            "Drop an item in the chat box to link it to other players.",
-            "Players in the same party will join the same instances.",
-            "Right click on a player or message them in chat to invite them to your party.",
-            "Support gems need to be placed in linked sockets to affect another gem.",
-            "Hold Shift to attack from your current location.",
-            "You can access your stash in town.",
-            "Waypoints can be used to travel quickly between some areas.",
-            "Flasks on your belt refill as you kill enemies.",
-            "Remember to allocate your passive skill points on the passives screen.",
-            "To reach the next difficulty level, find the exit at the end of the current difficulty.",
-            "To use a scroll or orb, right click it then left click the target item.",
-            "Hold Shift and click a stack of items to unstack them.",
-            "Never tell anyone your password.",
-            "Some items need to be identified with a Scroll of Wisdom before they can be used.",
-            "Cruel, Ruthless and Merciless difficulties incur an experience penalty on death.",
-            "Skill Gems gain experience as you do while they are equipped.",
-            "Bosses and rare monsters are more likely to drop powerful equipment.",
-            "If you cannot use a gem, placing it in an item will stop you from using the item.",
-            "Partying with other players makes enemies harder and rewards better.",
-            "Don't let enemies surround you.",
-            "You can change your key bindings in the Options menu.",
-            "You can move the minimap around using the arrow keys.",
-            "Your stash can be used to move items between your characters.",
-            "Being polite will get you invited back to play with people again!",
-            "There will be bugs.",
-            "You can only remove or place Flasks in your belt while your inventory is open.",
-            "Some chests have a better chance of dropping items than others.",
-            "Monsters that deal cold damage can freeze you.",
-            "Lightning damage can shock you, increasing damage taken.",
-            "Fire damage can ignite targets, causing them to burn for extra damage.",
-            "Some containers can be opened by attacking them.",
-            "Monsters with the very rare \"Wealth\" mod drop a huge number of items.",
-            "Activating a new Waypoint is a way of saving your exploration through Wraeclast.",
-            "At vendors, you can trade an Iron Ring and a Skill Gem for a resistance ring.",
-            "Competitive BSing is fine. Hate speech? Not so much.",
-            "Life happens. We get it. But for players who keep leaving games, LeaverBuster will issue a penalty.",
-            "Did someone make some great calls? Honor them after the game.",
-            "Did a teammate help make this game great? Honor them after the game.",
-            "Don't let another player's frustration control your next move.",
-            "Teammate kept a cool head after a bad start? Honor them with GG <3",
-            "Everyone misses a skill shot occasionally, even you.",
-            "Mistakes are opportunities, you know. -Reignover",
-            "Is someone flaming in game? Mute unhelpful player chat or pings through the TAB menu.",
-            "Even Jinx keeps cool and focuses on blowing up one thing: the enemy Nexus.",
-            "Games can get heated, but racial slurs have no place in League.",
-            "In-game mistakes can be new opportunities. Rethink your strategy.",
-            "Everyone loves a killer comeback story. Don't give up!",
-            "You can't play a team game without a team -- don't be a leaver!",
-            "Use smart pings to alert your teammates to threats. You'll win more games.",
-            "Smart pings keep your hands where you need 'em!",
-            "Did a teammate keep their cool, despite the odds? Honor them at end of game.",
-            "I can't always land skill shots. I'm only human. - GorillA",
-            "If a player stands out, honor them after the game!",
-            "Players who work with their team unlock cool privileges, like loot!",
-            "Keep focused, keep cool: you'll win more.",
-            "Above Honor Level 3? Get honored this game and get a loading-screen flair next game.",
-            "No team is perfect, but you're still a team. Get out there and fight to win!",
-            "Support your teammates, respect the game, and level up in Honor.",
-            "Staying cool under pressure takes practice. Take a deep breath if you need one.",
-            "Fight with honor.",
-            "You can't control other's tempers, but you can keep a cool head.",
-            "When a teammate stays focused despite the odds, honor them for staying cool!",
-            "Keep the game awesome. Report purposefully unhelpful players.",
-            "Use pings to keep your teammates informed or make suggestions.",
-            "Back-to-back games? Recharge with a few toe touches.",
-            "It sounds dumb, but a deep breath can help prevent tilt.",
-            "If someone makes you uncomfortable in game, report them.",
-            "Be un-tiltable!",
-            "Don't be the one to tilt your teammates and risk losing the game.",
-            "If a teammate pulls the game back from the brink, honor them after the game!",
-            "It's not easy to keep calm sometimes, but if you do, you're going to win more games",
-            "Part of being tilt-proof means getting good at expecting the unexpected!",
-            "Upgrade your cannons to improve your defense against intruders",
-            "Taking a break from Clash of Clans? Buy a Shield to protect your trophies!",
-            "Improve your army! Build the Laboratory and upgrade your troops",
-            "Out of gold? Try upgrading your Gold Mines",
-            "Upgrade your Army Camps to build a massive army!",
-            "Upgrade your walls to slow down the enemy",
-            "Defensive buildings like Cannons can't shoot while they are being upgraded",
-            "Gold Mines and Elixir Collectors do not generate resources while they are being upgraded",
-            "Even if your village is completely destroyed, you always keep some of your Gold and Elixir",
-            "Building good defenses is just as important as aggressive attacking",
-            "Barbarians tend to attack the nearest thing, regardless of building type",
-            "Archers attack anything in their range",
-            "Goblins are greedy for Gold and Elixir. Their favorite targets are resource buildings",
-            "Goblins deal double damage to resource buildings",
-            "Giants prefer to attack defensive structures like Cannons",
-            "Giants can take a lot of damage. Deploy them first to draw the defenders' attention.",
-            "Wall Breakers blast holes into walls, opening a way to attack to enemy buildings.",
-            "Wall Breakers deal major damage to enemy walls, but blow up themselves in the process",
-            "Balloons primarily target enemy defenses like Cannons",
-            "The Balloon is a flying unit, which means that Cannons and Mortars can't target it",
-            "Wizards can dish out high damage, but can't take much in return",
-            "Healers can heal your ground units, but won't attack enemies",
-            "The Healer is a flying unit. Air Defenses and Archer Towers can shoot her down quickly",
-            "The Dragon is a mighty flying unit that can attack both ground and air targets",
-            "Is P.E.K.K.A a knight? A samurai? A robot? No one knows!",
-            "The armor on P.E.K.K.A. is so heavy that the Spring Trap does not work on her.",
-            "Cannons can only shoot at ground units",
-            "Mortars can only shoot at ground targets",
-            "Mortars deal splash damage to all ground units near the hit location",
-            "Archer Towers can target both air and ground units",
-            "Air Defense's rockets only work against flying units",
-            "The Wizard Tower deals damage against all units in the target area",
-            "The Wizard Tower can target both ground and air units",
-            "The Hidden Tesla tower is hidden from attackers until they come close enough",
-            "The final boss of Rain World is easy to beat - just eat the five glowy things!",
-            "The Hidden Tesla can attack both air and ground units",
-            "Traps are hidden from the attackers until they get close enough",
-            "Clearing obstacles like rocks and trees sometimes rewards you with Gems",
-            "The Battle Log shows information about attacks against your village",
-            "You can watch Battle Replays from the Battle Log!",
-            "Destroying an enemy's Town Hall always gives you one star",
-            "Troops in the Clan Castle will defend your village",
-            "Troops in the Camps are for attacking only - they won't defend your village",
-            "An active Shield protects you from attacks, though attacking others will shorten it.",
-            "You get a free Shield if an attacker destroys your village",
-            "You get a longer lasting Shield if your village takes a lot of damage",
-            "If you attack another player while you have an active Shield, you will lose a few hours of the Shield",
-            "You can attack the Goblin Horde (play single player missions) without losing your active Shield",
-            "Need a bit more gold for an upgrade? Take it from the Goblins in a single player mission!",
-            "Trophies that you win are deducted from your opponents' trophies!",
-            "Complete Achievements to earn free Green Gems!",
-            "Upgrade your Town Hall to unlock new buildings and new upgrade levels for your current buildings",
-            "Rebuild the ruined Clan Castle to join forces with other players!",
-            "Use the Clan Castle to request reinforcements from your Clanmates!",
-            "Clan Castle reinforcement troops can defend your village from an enemy attack, or you can deploy them when attacking",
-            "The Lightning Spell damages units and buildings in a small area.",
-            "The Healing Spell creates a ring of healing that heals your units while inside.",
-            "The Rage Spell creates a ring of rage that makes your units stronger and faster while inside.",
-            "In a gunfight, always be behind cover!",
-            "In a gunfight, spread your colonists out! Bunched-up targets are easy to hit.",
-            "Smoke totally prevents turrets from detecting targets, but people can still shoot with reduced accuracy.",
-            "When designing defences, assume enemies will get inside using drop pods or tunnels. Build internal defensive positions.",
-            "Foggy or rainy weather reduces the accuracy of ranged weapons.",
-            "You can analyze the chance a shot will hit by selecting the shooter and placing the mouse over the target.",
-            "Turrets explode when they take a lot of damage. Don't put them too close together, and don't put your people too close to them.",
-            "Some animals explode upon death. You can use transport pods to drop animals on enemies. Think about it.",
-            "If you need help in a fight, call your allies using the comms console.",
-            "Maddened animals will attack any human, including your enemies. You can use this.",
-            "EMP bursts will temporarily disable turrets and shields.",
-            "EMP bursts instantly break personal shields.",
-            "The hunter stealth stat reduces the chance of animal attacks. It is affected by the hunter's animals and shooting skills.",
-            "Animals are more likely to attack when harmed from close range. Long-range, slow-firing weapons are safest for hunting.",
-            "Entire herds of animals may attack you when you try to hunt them. Accept the risk before hunting, or choose weaker prey.",
-            "If you hunt boomrats and boomalopes when it's raining, their deaths won't cause forest fires.",
-            "Carefully-slaughtered animals yield more meat and leather than those who were killed violently.",
-            "Place a caravan packing spot to designate where you want your caravans to form up.",
-            "Single-person caravans can be very useful in certain situations.",
-            "Faster animals make faster caravans.",
-            "Smaller caravans will be attacked less often because they're less visible.",
-            "Before forming a caravan, collect the items you want to send in a stockpile near your caravan packing spot. This will make packing much faster.",
-            "If you have untrained animals in your caravan, you can split them into a separate caravan before attacking an enemy, to keep them out of the fight.",
-            "RimWorld is a story generator, not a skill test. A ruined colony is a dramatic tragedy, not a failure.",
-            "Some colonists are worse than useless. Bad allies are part of the challenge.",
-            "If you can't defend against a threat, make a caravan and run. You may lose your home, but your story can continue.",
-            "Avoid using stone for doors. They open very slowly, which wastes your colonists' time.",
-            "Put chairs in front of workbenches so workers can sit comfortably while working.",
-            "Mechanical structures break down and require replacement components. Don't build things you don't need.",
-            "Be careful what you construct on bridges. Bridges collapse easily under explosions, and your buildings will go with them.",
-            "Clean rooms increase research speed, improve medical outcomes, and reduce food poisoning. Sterile tiles make rooms extra-clean.",
-            "Building your whole colony in one structure saves resources, but also makes it difficult to contain fires.",
-            "Terrain affects movement speed. Build floors to help your colonists get around quicker.",
-            "Different terrain has different inherent cleanliness levels. Tiles are inherently clean; dirt is inherently dirty.",
-            "You can give prisoners as gifts. Giving a prisoner back to his own faction will be highly appreciated.",
-            "You can request specific types of trade caravans using the comms console.",
-            "You can use transport pods to send gifts directly to other factions' bases - even your enemies. This improves faction relations.",
-            "Keeping prisoners together saves space. However, prisoners kept together will try to break out together.",
-            "Enemy faction bases are very well-defended. You don't need to attack them - but be well-prepared if you choose to try.",
-            "Cute tame animals will nuzzle your colonists, improving their mood.",
-            "Assign your herbivorous animals to areas with lots of grass. They'll eat the grass and spare you the need to feed them.",
-            "If someone has a serious infection in a limb, you can remove the limb to save their life.",
-            "Sloshing through water makes people unhappy. Build a bridge when you can.",
-            "Luciferium can heal scars - even those on the eye or brain. It is, however, a permanent commitment.",
-            "Work and movement speed are affected by lighting. Everything is slower in the dark.",
-            "Deep underground caverns have a naturally stable temperature, even if it's very hot or cold outside.",
-            "Mountain bases are easy to defend. The downside is that people go crazy spending too long underground. And giant insects.",
-
-            "Telekineses pushes projectiles away",
-            "Eyes can't speak",
-            "It's ok to be scared",
-            "Melting is tired",
-            "Snare is a source of light",
-            "Plant can hold RMB to see further",
-            "Yung Venuz is the best",
-            "Yung Venuz is so cool",
-            "Steroids used to be a scientist",
-            "Steroids could do pushups forever",
-            "Don't forget to eat weapons",
-            "Throw damage scales with your level",
-            "Getting decapitated reduces max HP",
-            "Never surrender",
-            "Allies take damage over time",
-            "Your first ally costs less HP",
-            "Spawning new allies heals old ones",
-            "Change is coming",
-            "Firing the beam pauses rad attraction",
-            "Enemies absorb the beam's rads",
-            "Horror's beam destroys projectiles",
-            "Horror's beam powers up over time",
-            "Radiation is everywhere",
-            "Keep moving",
-            "Never look back",
-            "Never slow down",
-            "They're getting closer",
-            "Don't eat the rat meat",
-            "Portals can blow up cars",
-            "You get fewer drops when high on ammo",
-            "Ammo drops depend on your weapon types",
-            "Pick your mutations wisely",
-            "Remember to take a 15 minute break for every hour you play!",
-            "Always keep one eye on your ammo",
-            "Shells deal more damage from up close",
-        };
+        private static string[] adviceList;
         private static string GetAdvice()
         {
+            if (adviceList == null)
+            {
+                var path = AssetManager.ResolveFilePath("text/ti_advice.txt");
+                try
+                {
+                    adviceList = File.ReadAllLines(path)
+                        .Where(line => !string.IsNullOrWhiteSpace(line))
+                        .ToArray();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    return null;
+                }
+            }
             return adviceList[Random.Range(0, adviceList.Length)];
         }
 

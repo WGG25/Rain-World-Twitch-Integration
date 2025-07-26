@@ -2,20 +2,19 @@
 using System.Collections.Generic;
 using TwitchLib.Api.Core.Enums;
 using TwitchLib.Api;
-using TwitchLib.PubSub;
 using System.Collections.Concurrent;
-using TwitchLib.PubSub.Events;
 using TwitchLib.Api.Helix.Models.ChannelPoints.UpdateCustomRewardRedemptionStatus;
-using TwitchLib.PubSub.Models.Responses.Messages.Redemption;
 using RWCustom;
-using Microsoft.Extensions.Logging;
+using TwitchLib.EventSub.Websockets;
+using System.Threading.Tasks;
+using TwitchLib.EventSub.Websockets.Core.EventArgs;
+using TwitchLib.EventSub.Websockets.Core.EventArgs.Channel;
+using TwitchLib.EventSub.Core.SubscriptionTypes.Channel;
 using Debug = UnityEngine.Debug;
-using BepLogLevel = BepInEx.Logging.LogLevel;
-using TwitchLib.Api.Helix.Models.Search;
 
 namespace TwitchIntegration
 {
-    internal class IntegrationSystem : IDisposable, ILogger<TwitchPubSub>
+    internal class IntegrationSystem : IDisposable
     {
         // Rewards
         public bool? ChannelPointsAvailable { get; private set; }
@@ -23,39 +22,58 @@ namespace TwitchIntegration
 
         // Api
         public readonly TwitchAPI Api;
-        public readonly MockData MockApi;
         public readonly string ChannelId;
-        private readonly TwitchPubSub _pubSub;
+        private readonly EventSubWebsocketClient eventSub;
         private readonly ConcurrentQueue<PendingRedemption> _redemptionQueue = new();
 
-        public IntegrationSystem(TwitchAPI api, string channel, MockData mockApi = null)
+        private bool disposed;
+
+        public IntegrationSystem(TwitchAPI api, EventSubWebsocketClient eventSub, string channelId)
         {
             Api = api;
-            MockApi = mockApi;
-            ChannelId = channel;
+            ChannelId = channelId;
+            this.eventSub = eventSub;
 
             // Scan for integration methods
-            foreach (var pair in Integrations.Attributes)
+            foreach (var (method, attribute) in Integrations.Attributes)
             {
-                Rewards[pair.Item2.RewardTitle] = new RewardInfo(pair.Item2, pair.Item1, this);
+                Rewards[attribute.RewardTitle] = new RewardInfo(attribute, method, this);
             }
 
-            if (MockApi == null)
-            {
-                Plugin.Logger.LogInfo("Connecting PubSub...");
-                _pubSub = new(this);
-                _pubSub.OnListenResponse += OnListenResponse;
-                _pubSub.OnPubSubServiceConnected += SendTopics;
-                _pubSub.OnChannelPointsRewardRedeemed += OnRedemption;
-                _pubSub.ListenToChannelPoints(channel);
-                _pubSub.Connect();
-            }
-            else
-            {
-                Plugin.Logger.LogInfo("Using mock API! PubSub skipped.");
-            }
+            this.eventSub.WebsocketConnected += OnConnected;
+            this.eventSub.WebsocketDisconnected += OnDisconnected;
+
+            this.eventSub.ChannelPointsCustomRewardRedemptionAdd += OnRedemption;
 
             RefreshRewards();
+        }
+
+        public Task<bool> Connect(Uri uri)
+        {
+            return eventSub.ConnectAsync(uri);
+        }
+
+        // Subscribe to topics once websocket connects
+        private async void OnConnected(object sender, WebsocketConnectedArgs e)
+        {
+            await Api.Helix.EventSub.CreateEventSubSubscriptionAsync(
+                "channel.channel_points_custom_reward_redemption.add", "1",
+                new() { { "broadcaster_user_id", ChannelId } },
+                EventSubTransportMethod.Websocket,
+                eventSub.SessionId);
+        }
+
+        // Try to reconnect when disconnected
+        private async void OnDisconnected(object sender, EventArgs e)
+        {
+            var rng = new Random();
+            int delay = rng.Next(1000, 2000);
+
+            while (!await eventSub.ReconnectAsync() && !disposed)
+            {
+                await Task.Delay(delay);
+                delay = Math.Min(delay * 2, 30000);
+            }
         }
 
         public void RefreshRewards()
@@ -68,7 +86,7 @@ namespace TwitchIntegration
             }
 
             // Request existing rewards
-            Api.Helix.ChannelPoints.GetCustomRewardAsync(ChannelId).ContinueWith(task =>
+            Api.Helix.ChannelPoints.GetCustomRewardAsync(ChannelId).ContinueWith(async task =>
             {
                 if (Utils.ValidateSuccess(task))
                 {
@@ -85,6 +103,24 @@ namespace TwitchIntegration
                 else
                 {
                     ChannelPointsAvailable = false;
+
+                    string notification;
+                    try
+                    {
+                        string type = (await Api.Helix.Users.GetUsersAsync()).Users[0].BroadcasterType;
+                        if (type == "affiliate" || type == "partner")
+                            notification = "Something went wrong when loading your Channel Points rewards!\nCheck exceptionLog.txt for details.";
+                        else
+                            notification = "You must be a Twitch affiliate or partner to use channel points!\nMake sure you logged into the right account.";
+                    }
+                    catch (Exception e)
+                    {
+                        notification = "Something went wrong when connecting to Twitch!\nCheck exceptionLog.txt for details.";
+                        Plugin.Logger.LogError(e);
+                        Debug.LogException(e);
+                    }
+                    var dialog = new Menu.DialogNotify(notification, Custom.rainWorld.processManager, null);
+                    Custom.rainWorld.processManager.ShowDialog(dialog);
                 }
             });
 
@@ -105,23 +141,6 @@ namespace TwitchIntegration
             });
         }
 
-        private void SendTopics(object sender, EventArgs e)
-        {
-            ((TwitchPubSub)sender).SendTopics(Api.Settings.AccessToken);
-        }
-
-        private void OnListenResponse(object sender, OnListenResponseArgs e)
-        {
-            if(e.Successful)
-            {
-                Plugin.Logger.LogInfo("Connected to PubSub!");
-            }
-            else
-            {
-                Plugin.Logger.LogError($"Failed to connect to PubSub!\nTopic: {e.Topic}\nError: {e.Response.Error}");
-            }
-        }
-
         public void Update()
         {
             var game = Custom.rainWorld.processManager.currentMainLoop as RainWorldGame;
@@ -135,10 +154,12 @@ namespace TwitchIntegration
             }
         }
 
-        private void OnRedemption(object sender, OnChannelPointsRewardRedeemedArgs e)
+        private void OnRedemption(object sender, ChannelPointsCustomRewardRedemptionArgs e)
         {
-            if (Rewards.TryGetValue(e.RewardRedeemed.Redemption.Reward.Title, out var rewardInfo))
-                _redemptionQueue.Enqueue(new PendingRedemption(rewardInfo, this, e.RewardRedeemed.Redemption));
+
+            var redemption = e.Notification.Payload.Event;
+            if (Rewards.TryGetValue(redemption.Reward.Title, out var rewardInfo))
+                _redemptionQueue.Enqueue(new PendingRedemption(rewardInfo, this, redemption));
         }
 
         public void Redeem(PendingRedemption redemption)
@@ -198,41 +219,28 @@ namespace TwitchIntegration
 
         public void Dispose()
         {
-            _pubSub?.Disconnect();
-        }
+            if (disposed) return;
+            disposed = true;
 
-        void ILogger.Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-        {
-            BepLogLevel level = logLevel switch
+            eventSub?.DisconnectAsync().ContinueWith(task =>
             {
-                LogLevel.Trace or LogLevel.Debug => BepLogLevel.None,
-                LogLevel.Information => BepLogLevel.Info,
-                LogLevel.Warning => BepLogLevel.Warning,
-                LogLevel.Error or LogLevel.Critical => BepLogLevel.Error,
-                _ => BepLogLevel.None
-            };
-
-            if (level == BepLogLevel.None) return;
-
-            Plugin.Logger.Log(level, formatter(state, exception));
+                if (!task.Result)
+                    Plugin.Logger.LogError("Failed to disconnect from EventSub!");
+            });
         }
-
-        bool ILogger.IsEnabled(LogLevel logLevel) => true;
-
-        IDisposable ILogger.BeginScope<TState>(TState state) => null;
 
         public class PendingRedemption
         {
             public readonly RewardInfo Reward;
             public readonly string UserName;
             public int Retries;
-            private readonly Redemption _redemption;
+            private readonly ChannelPointsCustomRewardRedemption _redemption;
             private readonly IntegrationSystem _system;
 
-            public PendingRedemption(RewardInfo reward, IntegrationSystem system, Redemption redemption)
+            public PendingRedemption(RewardInfo reward, IntegrationSystem system, ChannelPointsCustomRewardRedemption redemption)
             {
                 Reward = reward;
-                UserName = redemption.User.DisplayName;
+                UserName = redemption.UserName;
                 _system = system;
                 _redemption = redemption;
             }
@@ -250,20 +258,19 @@ namespace TwitchIntegration
             {
                 if (_redemption == null
                     || _redemption.Status != "UNFULFILLED"
-                    || _redemption.Reward.ShouldRedemptionsSkipRequestQueue
                     || Reward == null
                     || !Reward.AutoFulfill
                     || !Reward.Manageable) return;
 
                 var request = new UpdateCustomRewardRedemptionStatusRequest() { Status = status };
-                _system.Api.Helix.ChannelPoints.UpdateRedemptionStatusAsync(_redemption.ChannelId, _redemption.Reward.Id, new List<string>() { _redemption.Id }, request)
+                _system.Api.Helix.ChannelPoints.UpdateRedemptionStatusAsync(_redemption.BroadcasterUserId, _redemption.Reward.Id, new List<string>() { _redemption.Id }, request)
                     .LogFailure();
             }
         }
     }
 
     [AttributeUsage(AttributeTargets.Method, Inherited = false, AllowMultiple = false)]
-    sealed class TwitchRewardAttribute : Attribute
+    internal sealed class TwitchRewardAttribute : Attribute
     {
         public string RewardTitle { get; private set; }
         public string DisplayName { get; set; }
@@ -277,7 +284,7 @@ namespace TwitchIntegration
         }
     }
 
-    public enum RewardStatus
+    internal enum RewardStatus
     {
         TryLater,
         Cancel,
