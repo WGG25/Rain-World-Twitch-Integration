@@ -18,15 +18,6 @@ using MoreSlugcats;
 using Expedition;
 using System.Runtime.CompilerServices;
 
-/*
- * Suggested ideas:
- * Gravity modifiers for all creatures
- * Cooldown on each user's redemptions
- * Simulate a random input (e.g. left, right, jump) for an amount of time
- * Make all creatures hate you for an amount of time
- * Revive the player, if possible
- */
-
 namespace TwitchIntegration
 {
     internal static class Integrations

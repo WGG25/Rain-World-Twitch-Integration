@@ -19,11 +19,19 @@ namespace TwitchIntegration
         private MockApi()
         {
             mockApi = new Process();
-            mockApi.StartInfo = new ProcessStartInfo("twitch", "mock-api start");
+            mockApi.StartInfo = new ProcessStartInfo("twitch", $"mock-api start --port {Plugin.SetupFile.MockApiPort}")
+            {
+                UseShellExecute = Plugin.SetupFile.MockShowConsole,
+                CreateNoWindow = !Plugin.SetupFile.MockShowConsole,
+            };
             mockApi.Start();
 
             eventSub = new Process();
-            eventSub.StartInfo = new ProcessStartInfo("twitch", "event websocket start-server --port 8081");
+            eventSub.StartInfo = new ProcessStartInfo("twitch", $"event websocket start-server --port {Plugin.SetupFile.MockEventSubPort}")
+            {
+                UseShellExecute = Plugin.SetupFile.MockShowConsole,
+                CreateNoWindow = !Plugin.SetupFile.MockShowConsole,
+            };
             eventSub.Start();
 
             Instance = this;
@@ -68,8 +76,8 @@ namespace TwitchIntegration
 
     internal class MockHttpClientHandler : IHttpCallHandler
     {
-        private const string mockHelixUrl = "http://localhost:8080/mock";
-        private const string mockEventSubUrl = "http://localhost:8081/";
+        private readonly string mockHelixUrl = $"http://localhost:{Plugin.SetupFile.MockApiPort}/mock";
+        private readonly string mockEventSubUrl = $"http://localhost:{Plugin.SetupFile.MockEventSubPort}/";
         private const string helixUrl = "https://api.twitch.tv/helix";
         private const string eventSubUrl = "https://api.twitch.tv/helix/eventsub";
         private readonly TwitchHttpClient client;

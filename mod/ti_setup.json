@@ -1,0 +1,8 @@
+{
+    "client_id": "",
+    "redirect_uri": "http://localhost:37506/",
+    
+    "mock_api_port": 8080,
+    "mock_eventsub_port": 8081,
+    "mock_show_console": false
+}

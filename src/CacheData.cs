@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+﻿using Newtonsoft.Json.Linq;
 using System.IO;
 using UnityEngine;
 
@@ -6,7 +6,7 @@ namespace TwitchIntegration
 {
     internal static class CacheData
     {
-        private static Dictionary<string, object> _data;
+        private static JObject _data;
         private static string _oAuthToken;
         private static readonly object _lock = new();
 
@@ -26,15 +26,15 @@ namespace TwitchIntegration
 
             try
             {
-                _data = File.ReadAllText(FilePath).dictionaryFromJson();
+                _data = JObject.Parse(File.ReadAllText(FilePath));
             }
             catch
             {
                 _data = new();
             }
 
-            if (_data.TryGetValue(KEY_TOKEN, out object token) && token is string tokenString)
-                _oAuthToken = tokenString;
+            if (_data.TryGetValue(KEY_TOKEN, out JToken token) && token.Type == JTokenType.String)
+                _oAuthToken = (string)token;
         }
 
         public static void Save()
@@ -43,7 +43,7 @@ namespace TwitchIntegration
             {
                 _data[KEY_TOKEN] = OAuthToken;
 
-                File.WriteAllText(FilePath, _data.toJson());
+                File.WriteAllText(FilePath, _data.ToString());
             }
         }
 

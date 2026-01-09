@@ -8,6 +8,7 @@ using System;
 using Random = UnityEngine.Random;
 using System.Security.Permissions;
 using BepInEx.Logging;
+using System.IO;
 
 #pragma warning disable CS0618
 [assembly: SecurityPermission(SecurityAction.RequestMinimum, SkipVerification = true)]
@@ -15,11 +16,13 @@ using BepInEx.Logging;
 
 namespace TwitchIntegration
 {
-    [BepInPlugin("slime-cubed.twitchintegration", "Twitch Integration", "2.1.3")]
+    [BepInPlugin(ModID, "Twitch Integration", "3.0.0")]
     internal class Plugin : BaseUnityPlugin
     {
+        public const string ModID = "slime-cubed.twitchintegration";
         public static new ManualLogSource Logger { get; private set; }
         public static new Config Config { get; private set; }
+        public static SetupFile SetupFile { get; private set; }
 
         public IntegrationSystem System;
 
@@ -42,12 +45,17 @@ namespace TwitchIntegration
                     if (_init) return;
                     _init = true;
 
-                    MachineConnector.SetRegisteredOI("slime-cubed.twitchintegration", Config = new Config(this));
+                    var mod = ModManager.InstalledMods.Find(mod => mod.id == ModID);
+
+                    MachineConnector.SetRegisteredOI(ModID, Config = new Config(this));
                     AddCommands();
                     AddMiscHooks();
+
+                    SetupFile = SetupFile.Load(Path.Combine(mod.path, "ti_setup.json"));
                 }
                 catch (Exception e)
                 {
+                    Logger.LogError(e);
                     Debug.LogException(e);
                 }
             };
@@ -71,10 +79,23 @@ namespace TwitchIntegration
 
         private void Connect(SimpleButton button)
         {
-            if (System != null)
+            if (string.IsNullOrEmpty(SetupFile.ClientID) || string.IsNullOrEmpty(SetupFile.RedirectUri))
+            {
+                string message = "Please finish Twitch Integration setup:";
+                if (string.IsNullOrEmpty(SetupFile.ClientID))
+                    message += "\n\"client_id\" is missing from ti_setup.json";
+                if (string.IsNullOrEmpty(SetupFile.RedirectUri))
+                    message += "\n\"redirect_uri\" is missing from ti_setup.json";
+
+                var dialog = new DialogNotify(message, button.menu.manager, null);
+                button.menu.manager.ShowDialog(dialog);
+            }
+            else if (System != null)
             {
                 System?.Dispose();
                 System = null;
+
+                MockApi.Stop();
 
                 button.menuLabel.text = enableTwitchText;
             }

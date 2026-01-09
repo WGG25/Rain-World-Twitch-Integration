@@ -19,24 +19,19 @@ using TwitchLib.Api.Core;
 using TwitchLib.Communication.Clients;
 using TwitchLib.EventSub.Websockets.Extensions;
 using TwitchLib.EventSub.Websockets;
-using System.Text.Json;
+using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 
 namespace TwitchIntegration
 {
     internal class LoginPrompt : Dialog, IDisposable
     {
-        private static readonly string redirectUri = "http://localhost:37506/";
         private readonly CancellationTokenSource cts;
         private HttpListener server;
         private Task<IntegrationSystem> loginTask;
-
         private SimpleButton closeButton;
 
-        // API settings and other data
-        private const string defaultClientID = "wtm2ouib4loubtj0tu2l6t69erfsgd";
-        private const string mockClientID = "651437fa2cb52ffe5b8f4f76f7353d";
-        private const string mockClientSecret = "94d89394af9573a5f60d1dd3b1caf0";
-        private const string mockUserID = "20425321";
+        // API settings
         private static readonly List<AuthScopes> authScopes = new()
         {
             AuthScopes.Helix_Channel_Read_Redemptions,
@@ -58,6 +53,8 @@ namespace TwitchIntegration
                 loginTask = LoginMock(cts.Token);
             else
                 loginTask = Login(cts.Token);
+
+            loginTask.LogFailure();
         }
 
         public override void Update()
@@ -69,7 +66,7 @@ namespace TwitchIntegration
             if (loginTask != null && loginTask.IsCompleted)
             {
                 if (loginTask.IsFaulted)
-                    descriptionLabelLong.text = loginTask.Exception.ToString();
+                    descriptionLabel.text = loginTask.Exception.ToString();
                 else
                     Close();
                 loginTask = null;
@@ -135,17 +132,24 @@ namespace TwitchIntegration
 
             var twitch = services.GetRequiredService<TwitchAPI>();
             var eventSub = services.GetRequiredService<EventSubWebsocketClient>();
-            twitch.Settings.ClientId = mockClientID;
-            twitch.Settings.Secret = mockClientSecret;
+            using var httpClient = new HttpClient();
+
+            // Find any mock affiliate account to log in as
+            SetLoadingText("Finding user account info...");
+            (string clientID, string clientSecret) = await GetMockClientInfo(httpClient);
+            string userID = await GetMockUserID(httpClient);
+
+            twitch.Settings.ClientId = clientID;
+            twitch.Settings.Secret = clientSecret;
 
             SetLoadingText("Logging into mock API...");
-            twitch.Settings.AccessToken = await GetMockAccessToken();
+            twitch.Settings.AccessToken = await GetMockAccessToken(httpClient, clientID, clientSecret, userID);
             ct.ThrowIfCancellationRequested();
 
             SetLoadingText("Connecting to Twitch events...");
-            var system = new IntegrationSystem(twitch, eventSub, mockUserID);
+            var system = new IntegrationSystem(twitch, eventSub, userID);
 
-            if (await system.Connect(new Uri("ws://127.0.0.1:8081/ws")))
+            if (await system.Connect(new Uri($"ws://127.0.0.1:{Plugin.SetupFile.MockEventSubPort}/ws")))
             {
                 SetLoadingText("Connected!");
                 return system;
@@ -157,21 +161,40 @@ namespace TwitchIntegration
             }
         }
 
-        private async Task<string> GetMockAccessToken()
+        private async Task<(string id, string secret)> GetMockClientInfo(HttpClient httpClient)
         {
-            using var client = new HttpClient();
+            var stream = await httpClient.GetStreamAsync($"http://localhost:{Plugin.SetupFile.MockApiPort}/units/clients");
+            using var reader = new JsonTextReader(new StreamReader(stream));
+            var json = await JObject.LoadAsync(reader);
+            var client = json["data"][0];
+            var id = (string)client["ID"];
+            var secret = (string)client["Secret"];
+            return (id, secret);
+        }
 
-            var uri = new UriBuilder("http", "localhost", 8080, "auth/authorize");
-            uri.Query = "client_id=" + mockClientID
-                + "&client_secret=" + mockClientSecret
+        private async Task<string> GetMockUserID(HttpClient httpClient)
+        {
+            using var stream = await httpClient.GetStreamAsync($"http://localhost:{Plugin.SetupFile.MockApiPort}/units/users");
+            using var reader = new JsonTextReader(new StreamReader(stream));
+            var json = await JObject.LoadAsync(reader);
+            var user = json["data"].First(user => (string)user["broadcaster_type"] == "affiliate");
+            return (string)user["id"];
+        }
+
+        private async Task<string> GetMockAccessToken(HttpClient httpClient, string clientID, string clientSecret, string userID)
+        {
+            var uri = new UriBuilder("http", "localhost", Plugin.SetupFile.MockApiPort, "auth/authorize");
+            uri.Query = "client_id=" + clientID
+                + "&client_secret=" + clientSecret
                 + "&grant_type=user_token"
-                + "&user_id=" + mockUserID
+                + "&user_id=" + userID
                 + "&scope=" + string.Join("%20", authScopes.Select(Helpers.AuthScopesToString));
 
-            var res = await client.PostAsync(uri.Uri, null);
+            using var res = await httpClient.PostAsync(uri.Uri, null);
             var stream = await res.Content.ReadAsStreamAsync();
-            var json = await JsonDocument.ParseAsync(stream);
-            return json.RootElement.GetProperty("access_token").GetString();
+            using var reader = new JsonTextReader(new StreamReader(stream));
+            var json = await JObject.LoadAsync(reader);
+            return (string)json["access_token"];
         }
 
         private async Task<IntegrationSystem> Login(CancellationToken ct)
@@ -179,7 +202,7 @@ namespace TwitchIntegration
             var services = GetDefaultServices().BuildServiceProvider();
             var api = services.GetRequiredService<TwitchAPI>();
             var eventSub = services.GetRequiredService<EventSubWebsocketClient>();
-            api.Settings.ClientId = defaultClientID;
+            api.Settings.ClientId = Plugin.SetupFile.ClientID;
 
             ValidateAccessTokenResponse validation = null;
 
@@ -228,11 +251,11 @@ namespace TwitchIntegration
 
         private async Task<string> GetOAuthToken(TwitchAPI api, CancellationToken ct)
         {
-            var url = api.Auth.GetAuthorizationCodeUrl(redirectUri, api.Settings.Scopes).Replace("response_type=code", "response_type=token");
+            var url = api.Auth.GetAuthorizationCodeUrl(Plugin.SetupFile.RedirectUri, api.Settings.Scopes).Replace("response_type=code", "response_type=token");
 
             // Set up a server to receive the result
             var server = new HttpListener();
-            server.Prefixes.Add(redirectUri);
+            server.Prefixes.Add(Plugin.SetupFile.RedirectUri);
             this.server = server;
             try
             {
