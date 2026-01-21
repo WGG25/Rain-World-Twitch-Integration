@@ -17,6 +17,7 @@ using System.IO;
 namespace TwitchIntegration
 {
     [BepInPlugin(ModID, "Twitch Integration", "3.0.0")]
+    [BepInDependency("slime-cubed.devconsole", BepInDependency.DependencyFlags.SoftDependency)]
     internal class Plugin : BaseUnityPlugin
     {
         public const string ModID = "slime-cubed.twitchintegration";
