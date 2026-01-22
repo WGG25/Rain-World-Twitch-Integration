@@ -98,8 +98,7 @@ namespace TwitchIntegration
 
         private IServiceCollection GetDefaultServices()
         {
-            return new DefaultServiceProviderFactory()
-                .CreateBuilder(new ServiceCollection())
+            return new ServiceCollection()
                 .AddLogging(logger =>
                 {
                     logger
@@ -237,7 +236,7 @@ namespace TwitchIntegration
             SetLoadingText("Connecting to Twitch events...");
             var system = new IntegrationSystem(api, eventSub, validation.UserId);
 
-            if (await system.Connect(null))
+            if (await system.Connect())
             {
                 SetLoadingText("Connected!");
                 return system;

@@ -2,6 +2,6 @@
   "id": "slime-cubed.twitchintegration",
   "name": "Twitch Integration",
   "description": "Adds Twitch channel point rewards that let viewers affect your game!\nYou must be a Twitch affiliate or partner to use this mod.",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "authors": "Slime_Cubed"
 }

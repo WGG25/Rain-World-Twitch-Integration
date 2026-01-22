@@ -8,7 +8,7 @@ using RWCustom;
 using TwitchLib.EventSub.Websockets;
 using System.Threading.Tasks;
 using TwitchLib.EventSub.Websockets.Core.EventArgs;
-using TwitchLib.EventSub.Websockets.Core.EventArgs.Channel;
+using TwitchLib.EventSub.Core.EventArgs.Channel;
 using TwitchLib.EventSub.Core.SubscriptionTypes.Channel;
 using Debug = UnityEngine.Debug;
 
@@ -40,6 +40,7 @@ namespace TwitchIntegration
                 Rewards[attribute.RewardTitle] = new RewardInfo(attribute, method, this);
             }
 
+            this.eventSub.ErrorOccurred += async (_, args) => Plugin.Logger.LogError(args.Message + "\n" + args.Exception);
             this.eventSub.WebsocketConnected += OnConnected;
             this.eventSub.WebsocketDisconnected += OnDisconnected;
 
@@ -48,13 +49,13 @@ namespace TwitchIntegration
             RefreshRewards();
         }
 
-        public Task<bool> Connect(Uri uri)
+        public Task<bool> Connect(Uri uri = null)
         {
             return eventSub.ConnectAsync(uri);
         }
 
         // Subscribe to topics once websocket connects
-        private async void OnConnected(object sender, WebsocketConnectedArgs e)
+        private async Task OnConnected(object sender, WebsocketConnectedArgs e)
         {
             await Api.Helix.EventSub.CreateEventSubSubscriptionAsync(
                 "channel.channel_points_custom_reward_redemption.add", "1",
@@ -64,7 +65,7 @@ namespace TwitchIntegration
         }
 
         // Try to reconnect when disconnected
-        private async void OnDisconnected(object sender, EventArgs e)
+        private async Task OnDisconnected(object sender, EventArgs e)
         {
             var rng = new Random();
             int delay = rng.Next(1000, 2000);
@@ -154,10 +155,10 @@ namespace TwitchIntegration
             }
         }
 
-        private void OnRedemption(object sender, ChannelPointsCustomRewardRedemptionArgs e)
+        private async Task OnRedemption(object sender, ChannelPointsCustomRewardRedemptionArgs e)
         {
 
-            var redemption = e.Notification.Payload.Event;
+            var redemption = e.Payload.Event;
             if (Rewards.TryGetValue(redemption.Reward.Title, out var rewardInfo))
                 _redemptionQueue.Enqueue(new PendingRedemption(rewardInfo, this, redemption));
         }
