@@ -26,7 +26,7 @@ namespace TwitchIntegration
         // Tab 0: Control panel
         private OpSimpleButton _logOut;
         
-        // Tab 1: Rewards
+        // Tab 2: Rewards
         private readonly List<RewardUI> _rewardList = new();
         private OpCheckBox _toggleAll;
         private OpSimpleButton _enableRewards;
@@ -82,29 +82,29 @@ namespace TwitchIntegration
         {
             const float titleHeight = 35f;
             const float spacing = 6f;
+            const float tabTop = 600f;
+            const float tabWidth = 600f;
 
             base.Initialize();
 
             Tabs = new OpTab[]
             {
                 new OpTab(this, "Control Panel"),
+                new OpTab(this, "Colors"),
                 new OpTab(this, "Rewards")
             };
 
 
-
-            // Control Panel //
+            //// Control Panel //
             const float columnWidth = 300f;
             const float itemHeight = 30f;
-            const float pickerHeight = 150f;
-            const float pickerWidth = 150f;
-            const float columnX = (int)(600f - columnWidth) / 2;
+            const float columnX = (int)(tabWidth - columnWidth) / 2;
 
             // Title
             Tabs[0].AddItems(
-                new OpLabel(new Vector2(0f, 600f - titleHeight), new Vector2(600f, titleHeight), "Twitch Integration Control Panel", FLabelAlignment.Center, true)
+                new OpLabel(new Vector2(0f, tabTop - titleHeight), new Vector2(tabWidth, titleHeight), "Twitch Integration Control Panel", FLabelAlignment.Center, true)
             );
-            float y = 600f - titleHeight - itemHeight - spacing * 2f;
+            float y = tabTop - titleHeight - itemHeight - spacing * 2f;
 
             // Store token on login
             Tabs[0].AddItems(
@@ -154,26 +154,39 @@ namespace TwitchIntegration
                 { description = "Show the name of the user who summoned a creature above it." },
                 new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Show Name Tags")
             );
-            y -= pickerHeight + spacing;
 
-            Tabs[0].AddItems(
+
+            //// Colors tab
+            const float pickerHeight = 150f;
+            const float pickerWidth = 150f;
+
+            // Title
+            Tabs[1].AddItems(
+                new OpLabel(new Vector2(0f, tabTop - titleHeight), new Vector2(tabWidth, titleHeight), "Creature Spawn Color Settings", FLabelAlignment.Center, true)
+            );
+            y = tabTop - titleHeight - pickerHeight - spacing * 2f;
+
+            Tabs[1].AddItems(
                 new OpColorPicker(FriendlyColor, new Vector2(columnX - pickerWidth + 24f, y))
                 { description = "Friendly creatures' label color." },
                 new OpLabel(new Vector2(columnX + 24f + spacing, y + pickerHeight / 2), new Vector2(columnWidth - 24f - spacing, 24f), "Friendly Color")
             );
             y -= pickerHeight + spacing;
 
-            Tabs[0].AddItems(
+            Tabs[1].AddItems(
                 new OpColorPicker(HostileColor, new Vector2(columnX - pickerWidth + 24f, y))
                 { description = "Hostile creatures' label color." },
                 new OpLabel(new Vector2(columnX + 24f + spacing, y + pickerHeight / 2), new Vector2(columnWidth - 24f - spacing, 24f), "Hostile Color")
             );
-            y -= itemHeight + spacing;
+            y -= pickerHeight + spacing;
 
-            Tabs[0].AddItems(
-                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "MockShowConsole: " + Plugin.SetupFile.MockShowConsole.ToString())
+            Tabs[1].AddItems(
+                new OpColorPicker(NeutralColor, new Vector2(columnX - pickerWidth + 24f, y))
+                { description = "Neutral creatures' label color." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y + pickerHeight / 2), new Vector2(columnWidth - 24f - spacing, 24f), "Neutral Color")
             );
-            y -= itemHeight + spacing;
+            y -= pickerHeight + spacing;
+
 
             _logOut.OnClick += btn =>
             {
@@ -187,10 +200,10 @@ namespace TwitchIntegration
 
 
 
-            // Rewards //
+            //// Rewards //
             const float headerHeight = 24f;
             const float footerHeight = 24f;
-            const float headerY = 600f - titleHeight - spacing - headerHeight;
+            const float headerY = tabTop - titleHeight - spacing - headerHeight;
             const float footerY = 0f;
             const float rewardHeight = 24f;
             const float rewardSpacing = 11f;
@@ -204,16 +217,16 @@ namespace TwitchIntegration
             const float fieldWidth = 75f;
             const float fieldSpacing = fieldWidth + listSpacing;
             const float statusX = fieldX + fieldSpacing * 2f;
-            const float statusWidth = 600f - listMargin - statusX;
+            const float statusWidth = tabWidth - listMargin - statusX;
             const int footerItemCount = 6;
-            const float footerItemWidth = (600f - spacing * (footerItemCount - 1)) / footerItemCount;
+            const float footerItemWidth = (tabWidth - spacing * (footerItemCount - 1)) / footerItemCount;
             OpScrollBox sb;
 
             // Add header
             int rewardCount = _plugin.System?.Rewards.Count ?? 1;
 
-            Tabs[1].AddItems(
-                new OpLabel(new Vector2(0f, 600f - titleHeight), new Vector2(600f, titleHeight), "Channel Point Rewards", FLabelAlignment.Center, true),
+            Tabs[2].AddItems(
+                new OpLabel(new Vector2(0f, tabTop - titleHeight), new Vector2(tabWidth, titleHeight), "Channel Point Rewards", FLabelAlignment.Center, true),
                 _toggleAll = new OpCheckBox(new(false), new Vector2(checkX, headerY))
                 { description = "Select or deselect all rewards." },
                 new OpLabel(new Vector2(checkX + checkSpacing, headerY), new Vector2(24f, 24f), "Auto\nComp.")
@@ -224,7 +237,7 @@ namespace TwitchIntegration
                 new OpLabel(new Vector2(fieldX + fieldSpacing, headerY), new Vector2(fieldWidth, 24f), "Delay")
                 { description = "Configures the global cooldown of this reward in seconds." },
                 new OpLabel(new Vector2(statusX, headerY), new Vector2(statusWidth, 24f), "Status"),
-                sb = new OpScrollBox(new Vector2(0f, footerHeight + spacing), new Vector2(600f, headerY - footerHeight - spacing * 2f), rewardCount * (rewardHeight + rewardSpacing))
+                sb = new OpScrollBox(new Vector2(0f, footerHeight + spacing), new Vector2(tabWidth, headerY - footerHeight - spacing * 2f), rewardCount * (rewardHeight + rewardSpacing))
             );
 
             // Add rewards
@@ -265,7 +278,7 @@ namespace TwitchIntegration
             sb.ScrollToTop();
 
             // Add footer
-            Tabs[1].AddItems(
+            Tabs[2].AddItems(
                 _enableRewards = new OpSimpleButton(new Vector2((footerItemWidth + spacing) * 0f, footerY), new Vector2(footerItemWidth, footerHeight), "Enable Selected")
                 { description = "Allow viewers to redeem these rewards." },
                 _disableRewards = new OpSimpleButton(new Vector2((footerItemWidth + spacing) * 1f, footerY), new Vector2(footerItemWidth, footerHeight), "Disable Selected")
