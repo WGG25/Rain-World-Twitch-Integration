@@ -7,17 +7,19 @@ namespace TwitchIntegration
 {
     public class NameLabel : CosmeticSprite
     {
-        private static readonly ConditionalWeakTable<AbstractCreature, string> _names = new();
+        private static readonly ConditionalWeakTable<AbstractCreature, Tuple<string, Color>> _names = new();
 
         private readonly Creature _owner;
         private readonly string _name;
+        private readonly Color _color;
 
         private Vector2 CenterPos => _owner.mainBodyChunk.pos + Vector2.up * (_owner.mainBodyChunk.rad + 20f);
 
-        public NameLabel(Creature owner, string name)
+        public NameLabel(Creature owner, string name, Color color)
         {
             _owner = owner;
             _name = name;
+            _color = color;
 
             pos = CenterPos;
             lastPos = pos;
@@ -43,7 +45,8 @@ namespace TwitchIntegration
             var label = new FLabel(RWCustom.Custom.GetFont(), _name)
             {
                 anchorX = 0.5f,
-                anchorY = 0.5f
+                anchorY = 0.5f,
+                color = _color,
             };
 
             var back = new FSprite("Futile_White")
@@ -87,9 +90,10 @@ namespace TwitchIntegration
         {
             string text = orig(self);
 
-            if (_names.TryGetValue(self.creature, out string name))
+            if (_names.TryGetValue(self.creature, out var nameAndColor))
             {
-                text += "TWITCHOWNER<cC>" + name + "<cB>";
+                var c = nameAndColor.Item2;
+                text += "TWITCHOWNER<cC>" + nameAndColor.Item1 + ":" + c.r.ToString() + "," + c.g.ToString() + "," + c.b.ToString() + "<cB>";
             }
 
             return text;
@@ -99,17 +103,20 @@ namespace TwitchIntegration
         {
             orig(self, s);
 
-            if(self.unrecognizedSaveStrings.TryGetValue("TWITCHOWNER", out var name)
+            if(self.unrecognizedSaveStrings.TryGetValue("TWITCHOWNER", out var nameAndColorString)
                 && !_names.TryGetValue(self.creature, out _))
             {
                 self.unrecognizedSaveStrings.Remove("TWITCHOWNER");
-                _names.Add(self.creature, name);
+                var splitNameAndColor = nameAndColorString.Split(':');
+                var name = splitNameAndColor[0];
+                var splitColor = splitNameAndColor[1].Split(',');
+                _names.Add(self.creature, new Tuple<string, Color>(name, new Color(Int32.Parse(splitColor[0]), Int32.Parse(splitColor[1]), Int32.Parse(splitColor[2]))));
             }
         }
 
-        public static void AddNameLabel(AbstractCreature creature, string name)
+        public static void AddNameLabel(AbstractCreature creature, string name, Color color)
         {
-            _names.Add(creature, name);
+            _names.Add(creature, new Tuple<string, Color>(name, color));
         }
 
         private static void Room_AddObject(On.Room.orig_AddObject orig, Room self, UpdatableAndDeletable obj)
@@ -118,9 +125,9 @@ namespace TwitchIntegration
 
             if(obj is Creature crit
                 && Plugin.Config.ShowNameTags.Value
-                && _names.TryGetValue(crit.abstractCreature, out var name))
+                && _names.TryGetValue(crit.abstractCreature, out var nameAndColor))
             {
-                self.AddObject(new NameLabel(crit, name));
+                self.AddObject(new NameLabel(crit, nameAndColor.Item1, nameAndColor.Item2));
             }
         }
     }

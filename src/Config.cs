@@ -17,6 +17,9 @@ namespace TwitchIntegration
         public readonly Configurable<bool> ClassicColors;
         public readonly Configurable<bool> DetachOnTeleport;
         public readonly Configurable<bool> ShowNameTags;
+        public readonly Configurable<Color> FriendlyColor;
+        public readonly Configurable<Color> HostileColor;
+        public readonly Configurable<Color> NeutralColor;
         private readonly Plugin _plugin;
         private readonly Dictionary<string, Configurable<bool>> _autoFulfill = new();
 
@@ -44,6 +47,9 @@ namespace TwitchIntegration
             ClassicColors = config.Bind("classic_colors", true);
             DetachOnTeleport = config.Bind("detach_on_teleport", true);
             ShowNameTags = config.Bind("show_name_tags", true);
+            FriendlyColor = config.Bind("friendly_color", new Color(0.5f, 0.5f, 0.1f));
+            HostileColor = config.Bind("hostile_color", new Color(0.5f, 0.1f, 0.5f));
+            NeutralColor = config.Bind("neutral_color", new Color(0.7f, 0.7f, 0.7f));
 
             foreach(var pair in Integrations.Attributes)
             {
@@ -90,6 +96,8 @@ namespace TwitchIntegration
             // Control Panel //
             const float columnWidth = 300f;
             const float itemHeight = 30f;
+            const float pickerHeight = 150f;
+            const float pickerWidth = 150f;
             const float columnX = (int)(600f - columnWidth) / 2;
 
             // Title
@@ -146,8 +154,26 @@ namespace TwitchIntegration
                 { description = "Show the name of the user who summoned a creature above it." },
                 new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "Show Name Tags")
             );
+            y -= pickerHeight + spacing;
+
+            Tabs[0].AddItems(
+                new OpColorPicker(FriendlyColor, new Vector2(columnX - pickerWidth + 24f, y))
+                { description = "Friendly creatures' label color." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y + pickerHeight / 2), new Vector2(columnWidth - 24f - spacing, 24f), "Friendly Color")
+            );
+            y -= pickerHeight + spacing;
+
+            Tabs[0].AddItems(
+                new OpColorPicker(HostileColor, new Vector2(columnX - pickerWidth + 24f, y))
+                { description = "Hostile creatures' label color." },
+                new OpLabel(new Vector2(columnX + 24f + spacing, y + pickerHeight / 2), new Vector2(columnWidth - 24f - spacing, 24f), "Hostile Color")
+            );
             y -= itemHeight + spacing;
 
+            Tabs[0].AddItems(
+                new OpLabel(new Vector2(columnX + 24f + spacing, y), new Vector2(columnWidth - 24f - spacing, 24f), "MockShowConsole: " + Plugin.SetupFile.MockShowConsole.ToString())
+            );
+            y -= itemHeight + spacing;
 
             _logOut.OnClick += btn =>
             {
