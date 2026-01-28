@@ -202,7 +202,7 @@ namespace TwitchIntegration
 
             // Spawn the lizard
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(CritType.RedLizard), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.HostileColor.Value);
             crit.Realize();
 
             // Move the lizard into the pipe
@@ -231,7 +231,7 @@ namespace TwitchIntegration
 
             // Spawn the lizard (but dead)
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(CritType.RedLizard), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.NeutralColor.Value);
             crit.state.alive = false;
             ((LizardState)crit.state).health = -1f;
             crit.Realize();
@@ -262,7 +262,7 @@ namespace TwitchIntegration
 
             // Spawn the lizard
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(RandomCreatureType()), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.NeutralColor.Value);
             crit.Realize();
 
             // Move the lizard into the pipe
@@ -1078,7 +1078,7 @@ namespace TwitchIntegration
             // Spawn the scav
             var type = Random.value < 0.2f && ModManager.MSC ? DLCCritType.ScavengerElite : CritType.Scavenger;
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(type), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.NeutralColor.Value);
             crit.Realize();
 
             // Move the scav into the pipe
@@ -1107,7 +1107,7 @@ namespace TwitchIntegration
 
             // Spawn the lizard
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(RandomLizardType()), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.FriendlyColor.Value);
             crit.Realize();
             foreach (var absPly in Game.Players)
             {
@@ -1191,7 +1191,7 @@ namespace TwitchIntegration
 
             // Spawn the lizard
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(RandomLizardType()), null, new WorldCoordinate(room.index, -1, -1, -1), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.HostileColor.Value);
             crit.Realize();
 
             // Move the lizard into the pipe
@@ -1659,7 +1659,7 @@ namespace TwitchIntegration
 
             // Spawn the pup
             var crit = new AbstractCreature(ply.room.world, StaticWorld.GetCreatureTemplate(MSCCritType.SlugNPC), null, new WorldCoordinate(ply.room.world.offScreenDen.index, -1, -1, 0), ply.room.game.GetNewID());
-            NameLabel.AddNameLabel(crit, RedeemUserName);
+            NameLabel.AddNameLabel(crit, RedeemUserName, Plugin.Config.FriendlyColor.Value);
             (crit.state as PlayerNPCState).foodInStomach = 1;
             crit.Realize();
 
