@@ -40,7 +40,7 @@ namespace TwitchIntegration
                 Rewards[attribute.RewardTitle] = new RewardInfo(attribute, method, this);
             }
 
-            this.eventSub.ErrorOccurred += async (_, args) => Plugin.Logger.LogError(args.Message + "\n" + args.Exception);
+            this.eventSub.ErrorOccurred += (_, args) => { Plugin.Logger.LogError(args.Message + "\n" + args.Exception); return Task.CompletedTask; };
             this.eventSub.WebsocketConnected += OnConnected;
             this.eventSub.WebsocketDisconnected += OnDisconnected;
 
@@ -155,12 +155,14 @@ namespace TwitchIntegration
             }
         }
 
-        private async Task OnRedemption(object sender, ChannelPointsCustomRewardRedemptionArgs e)
+        private Task OnRedemption(object sender, ChannelPointsCustomRewardRedemptionArgs e)
         {
 
             var redemption = e.Payload.Event;
             if (Rewards.TryGetValue(redemption.Reward.Title, out var rewardInfo))
                 _redemptionQueue.Enqueue(new PendingRedemption(rewardInfo, this, redemption));
+
+            return Task.CompletedTask;
         }
 
         public void Redeem(PendingRedemption redemption)
